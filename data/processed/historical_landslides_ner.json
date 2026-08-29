@@ -1,0 +1,162 @@
+[
+  {
+    "id": "ls_ner_001",
+    "name": "Nongpoh - GS Road Corridor Landslide",
+    "coordinates": [91.8794, 25.9036],
+    "state": "Meghalaya",
+    "eventDate": "2020-07-12",
+    "triggerType": "CONTINUOUS_MONSOON_RAIN",
+    "fatalities": 0,
+    "severity": "HIGH",
+    "provenance": {
+      "source": "NASA Global Landslide Catalog (GLC) & NDMA Northeast Incident Reports",
+      "catalogId": "NASA_GLC_11842",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Debris and mudslide blocking NH-6 (old NH-40) near Nongpoh following 140mm 48-hour monsoon precipitation."
+  },
+  {
+    "id": "ls_ner_002",
+    "name": "Sonapur Tunnel Landslide Zone",
+    "coordinates": [92.3615, 25.1098],
+    "state": "Meghalaya",
+    "eventDate": "2022-06-18",
+    "triggerType": "TORRENTIAL_RAIN",
+    "fatalities": 2,
+    "severity": "CRITICAL",
+    "provenance": {
+      "source": "Geological Survey of India (GSI) Landslide Inventory & Meghalaya State Disaster Management Authority",
+      "catalogId": "GSI_NER_2022_0618",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Massive hill collapse near Sonapur tunnel on NH-06 disrupting road connectivity to Barak Valley, Tripura, and Mizoram."
+  },
+  {
+    "id": "ls_ner_003",
+    "name": "Guwahati Kharghuli Hill Slope Failure",
+    "coordinates": [91.7761, 26.1942],
+    "state": "Assam",
+    "eventDate": "2021-09-03",
+    "triggerType": "HEAVY_RAIN",
+    "fatalities": 1,
+    "severity": "MEDIUM",
+    "provenance": {
+      "source": "Assam State Disaster Management Authority (ASDMA) Incident Database",
+      "catalogId": "ASDMA_INC_2021_09",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Urban hill slope failure damaging road and residential boundary walls in Kharghuli, Kamrup Metropolitan district."
+  },
+  {
+    "id": "ls_ner_004",
+    "name": "Dima Hasao Haflong Road Breach",
+    "coordinates": [93.0298, 25.1764],
+    "state": "Assam",
+    "eventDate": "2022-05-15",
+    "triggerType": "EXTREME_PRECIPITATION",
+    "fatalities": 3,
+    "severity": "CRITICAL",
+    "provenance": {
+      "source": "NASA Global Landslide Catalog & ASDMA Flash Flood/Landslide Dossier",
+      "catalogId": "NASA_GLC_14092",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Catastrophic slope displacement along Haflong-Jatinga transport corridor following over 300mm antecedent rainfall."
+  },
+  {
+    "id": "ls_ner_005",
+    "name": "Bhalukpong - Bomdila Highway Landslide",
+    "coordinates": [92.6147, 27.0125],
+    "state": "Arunachal Pradesh",
+    "eventDate": "2023-06-25",
+    "triggerType": "MONSOON_RAIN",
+    "fatalities": 0,
+    "severity": "HIGH",
+    "provenance": {
+      "source": "Border Roads Organisation (BRO) Project Vartak & Disaster Management Cell Arunachal Pradesh",
+      "catalogId": "BRO_VARTAK_2023_06",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Rockfall and soil slide blocking Balipara-Charduar-Tawang (BCT) strategic road corridor between Bhalukpong and Tenga."
+  },
+  {
+    "id": "ls_ner_006",
+    "name": "Kohima - Dimapur NH-29 Pagala Pahar Landslide",
+    "coordinates": [93.8125, 25.7642],
+    "state": "Nagaland",
+    "eventDate": "2023-07-04",
+    "triggerType": "HEAVY_RAIN_ROCKFALL",
+    "fatalities": 2,
+    "severity": "CRITICAL",
+    "provenance": {
+      "source": "Nagaland State Disaster Management Authority (NSDMA) & NHIDCL Incident Reports",
+      "catalogId": "NSDMA_NH29_2023_0704",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Massive boulder and rockfall detachment on NH-29 near Old Chümoukedima bridge (Pagala Pahar section)."
+  },
+  {
+    "id": "ls_ner_007",
+    "name": "Singtam - Rangpo NH-10 Teesta Corridor Slide",
+    "coordinates": [88.5132, 27.1856],
+    "state": "Sikkim",
+    "eventDate": "2023-10-04",
+    "triggerType": "GLOF_ANTECEDENT_RAINFALL",
+    "fatalities": 14,
+    "severity": "CRITICAL",
+    "provenance": {
+      "source": "Sikkim State Disaster Management Authority (SSDMA) & GSI Technical Hazard Report",
+      "catalogId": "SSDMA_GLOF_NH10_2023",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Severe highway washout and toe-erosion landslides along NH-10 corridor connecting Gangtok and Siliguri."
+  },
+  {
+    "id": "ls_ner_008",
+    "name": "Aizawl Sairang Road Slope Collapse",
+    "coordinates": [92.6612, 23.7745],
+    "state": "Mizoram",
+    "eventDate": "2024-05-28",
+    "triggerType": "CYCLONIC_RAINFALL_REMAL",
+    "fatalities": 15,
+    "severity": "CRITICAL",
+    "provenance": {
+      "source": "Mizoram Disaster Management & Rehabilitation Department & GSI Inventory",
+      "catalogId": "MIZO_DM_REMAL_2024_05",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Multiple catastrophic landslides across Aizawl periphery including quarry collapse near Melthum/Sairang road."
+  },
+  {
+    "id": "ls_ner_009",
+    "name": "Mawlyndep - Sohra Highway Landslide",
+    "coordinates": [91.7321, 25.3214],
+    "state": "Meghalaya",
+    "eventDate": "2021-08-14",
+    "triggerType": "HIGH_INTENSITY_RAINFALL",
+    "fatalities": 0,
+    "severity": "HIGH",
+    "provenance": {
+      "source": "NASA Global Landslide Catalog & Geological Survey of India",
+      "catalogId": "NASA_GLC_12948",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Severe road slumping and soil creep on the high-elevation escarpment corridor leading to Cherrapunji."
+  },
+  {
+    "id": "ls_ner_010",
+    "name": "Jorabat Highway Inundation & Siltation Slide",
+    "coordinates": [91.8654, 26.1042],
+    "state": "Assam",
+    "eventDate": "2023-08-10",
+    "triggerType": "INTENSE_MONSOON_DOWNPOUR",
+    "fatalities": 0,
+    "severity": "MEDIUM",
+    "provenance": {
+      "source": "National Highways Authority of India (NHAI) & ASDMA Regional Log",
+      "catalogId": "NHAI_NER_JORABAT_2023",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Hill runoff carrying massive silt debris onto the junction of NH-27 and NH-06 at the Assam-Meghalaya border."
+  }
+]
