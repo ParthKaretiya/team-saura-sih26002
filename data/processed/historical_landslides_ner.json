@@ -158,5 +158,165 @@
       "confidence": "VERIFIED_RECORD"
     },
     "description": "Hill runoff carrying massive silt debris onto the junction of NH-27 and NH-06 at the Assam-Meghalaya border."
+  },
+  {
+    "id": "ls_ner_011",
+    "name": "Mangan - Chungthang Highway Debris Flow",
+    "coordinates": [88.5281, 27.5028],
+    "state": "Sikkim",
+    "eventDate": "2024-06-13",
+    "triggerType": "TORRENTIAL_MONSOON_RAIN",
+    "fatalities": 6,
+    "severity": "CRITICAL",
+    "provenance": {
+      "source": "Geological Survey of India (GSI) Sikkim Regional Office & SSDMA Report",
+      "catalogId": "GSI_SIKKIM_2024_06",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Multiple massive debris slides cutting off North Sikkim road connectivity between Mangan, Chungthang, and Lachung."
+  },
+  {
+    "id": "ls_ner_012",
+    "name": "Pasighat - Yingkiong Highway Bank Failure",
+    "coordinates": [95.0124, 28.0642],
+    "state": "Arunachal Pradesh",
+    "eventDate": "2023-07-19",
+    "triggerType": "RIVER_TOE_EROSION_MONSOON",
+    "fatalities": 0,
+    "severity": "HIGH",
+    "provenance": {
+      "source": "Border Roads Organisation (BRO) Project Brahmank Incident Record",
+      "catalogId": "BRO_BRAHMANK_2023_07",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Siang river valley slope subsidence undermining road formation along the Pasighat-Pangin-Yingkiong corridor."
+  },
+  {
+    "id": "ls_ner_013",
+    "name": "Champhai - Zokhawthar Border Highway Slide",
+    "coordinates": [93.3245, 23.4761],
+    "state": "Mizoram",
+    "eventDate": "2022-08-22",
+    "triggerType": "PROLONGED_MONSOON_RAINFALL",
+    "fatalities": 0,
+    "severity": "MEDIUM",
+    "provenance": {
+      "source": "Mizoram Disaster Management Authority & GSI Landslide Inventory",
+      "catalogId": "MIZO_GSI_CHAMPHAI_2022",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Active slope creep and road formation crack blocking international trade route to Zokhawthar."
+  },
+  {
+    "id": "ls_ner_014",
+    "name": "Tupul Railway Corridor Hill Collapse",
+    "coordinates": [93.6821, 24.8142],
+    "state": "Manipur",
+    "eventDate": "2022-06-30",
+    "triggerType": "HEAVY_PRECIPITATION_SLOPE_CUTTING",
+    "fatalities": 58,
+    "severity": "CRITICAL",
+    "provenance": {
+      "source": "National Disaster Management Authority (NDMA) & Geological Survey of India Post-Disaster Investigation",
+      "catalogId": "NDMA_NONEY_2022_06",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Catastrophic debris avalanche on steep shale slope at Tupul yard along the Jiribam-Imphal highway transport infrastructure."
+  },
+  {
+    "id": "ls_ner_015",
+    "name": "Kurseong - Pankhabari Hill Road Slide",
+    "coordinates": [88.2784, 26.8821],
+    "state": "West Bengal",
+    "eventDate": "2021-07-29",
+    "triggerType": "HIGH_INTENSITY_DOWNPOUR",
+    "fatalities": 0,
+    "severity": "MEDIUM",
+    "provenance": {
+      "source": "Geological Survey of India Landslide Compendium (Eastern Region)",
+      "catalogId": "GSI_WB_DARJ_2021_07",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Debris flow and rockslide blocking transit link connecting the plains of Siliguri to the Darjeeling/Sikkim corridor."
+  },
+  {
+    "id": "ls_ner_016",
+    "name": "Tura - Dalu Highway Escarpment Slip",
+    "coordinates": [90.2185, 25.5124],
+    "state": "Meghalaya",
+    "eventDate": "2022-06-20",
+    "triggerType": "TORRENTIAL_MONSOON",
+    "fatalities": 3,
+    "severity": "HIGH",
+    "provenance": {
+      "source": "Meghalaya State Disaster Management Authority (MSDMA) Garo Hills Division",
+      "catalogId": "MSDMA_GARO_2022_06",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Hill slope mudslide washing away culverts and road surface on NH-51 near Tura town."
+  },
+  {
+    "id": "ls_ner_017",
+    "name": "Mokokchung - Mariani NH-702D Subsidence",
+    "coordinates": [94.5214, 26.3241],
+    "state": "Nagaland",
+    "eventDate": "2020-07-16",
+    "triggerType": "CONTINUOUS_RAINFALL",
+    "fatalities": 0,
+    "severity": "MEDIUM",
+    "provenance": {
+      "source": "Nagaland State Disaster Management Authority (NSDMA) Incident Log",
+      "catalogId": "NSDMA_NH702D_2020",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Sinking zone along NH-702D disrupting supply trucks traveling between Assam valley and Mokokchung district."
+  },
+  {
+    "id": "ls_ner_018",
+    "name": "Lumding - Silchar Hill Transport Corridor Breach",
+    "coordinates": [93.1542, 25.3214],
+    "state": "Assam",
+    "eventDate": "2022-05-18",
+    "triggerType": "EXTREME_CYCLONIC_PRECIPITATION",
+    "fatalities": 4,
+    "severity": "CRITICAL",
+    "provenance": {
+      "source": "Northeast Frontier Railway (NFR) & ASDMA Dima Hasao Disaster Log",
+      "catalogId": "NFR_ASDMA_2022",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Multi-kilometer slope failures and road collapses across the Barail mountain pass cutting off the Barak Valley."
+  },
+  {
+    "id": "ls_ner_019",
+    "name": "Tawang - Sela Pass Highway Rockfall",
+    "coordinates": [92.1024, 27.5042],
+    "state": "Arunachal Pradesh",
+    "eventDate": "2021-10-18",
+    "triggerType": "PRECIPITATION_AND_FREEZE_THAW",
+    "fatalities": 0,
+    "severity": "HIGH",
+    "provenance": {
+      "source": "Border Roads Organisation (BRO) Project Vartak Technical Log",
+      "catalogId": "BRO_VARTAK_2021_10",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "High-altitude rockfall and snow-melt debris blocking BCT corridor near Sela Pass approach."
+  },
+  {
+    "id": "ls_ner_020",
+    "name": "Lunglei - Thenzawl Road Slump",
+    "coordinates": [92.7412, 23.1856],
+    "state": "Mizoram",
+    "eventDate": "2023-08-05",
+    "triggerType": "HEAVY_MONSOON_DOWNPOUR",
+    "fatalities": 0,
+    "severity": "MEDIUM",
+    "provenance": {
+      "source": "Mizoram Public Works Department (PWD) & Disaster Management Log",
+      "catalogId": "MIZO_PWD_2023_08",
+      "confidence": "VERIFIED_RECORD"
+    },
+    "description": "Cut-slope rotational failure causing partial highway collapse on the main arterial link to southern Mizoram."
   }
 ]
