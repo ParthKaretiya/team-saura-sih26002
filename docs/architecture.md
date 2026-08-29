@@ -14,26 +14,25 @@ This document describes the high-level architecture and current engineering impl
 | **Incident Management API** | `services/api/src/controllers` | Incident lifecycle (`REPORTED`, `VERIFIED`, `ACTIVE`, `RESOLVED`, `REJECTED`) and GeoJSON endpoints. | **WORKING** |
 | **Vehicle Tracking API** | `services/api/src/controllers` | Real-time GPS coordinate telemetry updates and GeoJSON fleet listing. | **WORKING** |
 | **Telemetry Simulator** | `services/api/src/scripts` | Generic waypoint-driven GPS simulation engine (`simulate-telematics.ts`). | **WORKING** |
-| **Interactive Map Dashboard** | `apps/web` | React + MapLibre GL JS rendering live GeoJSON hazard and vehicle markers with 3s polling. | **WORKING** |
+| **GraphHopper Routing Service** | `services/routing` | Local GraphHopper 10.2 engine running on Java 17 with North-East India OSM road network. | **WORKING** |
+| **Routing API Endpoint** | `services/api/src/controllers` | `GET /api/routes` with coordinate validation, normalization, and error handling. | **WORKING** |
+| **Interactive Map Dashboard** | `apps/web` | React + MapLibre GL JS rendering live hazard markers, vehicles, and real-time calculated route LineStrings. | **WORKING** |
 | **DEM & Slope Engine** | `services/ml` | Python DEM processor (`dem_processor.py`) calculating slope angles from elevation arrays, verified by `test_slope.py`. | **WORKING** |
-| **Automated Test Suite** | `services/api/src/tests` | Automated test suite validating coordinates, lifecycle rules, GeoJSON formats, and weather lookups. | **WORKING** |
-| **Routing Architecture Spike** | `docs/routing-spike.md` | Specification for OSM PBF bounding-box clipping and GraphHopper Custom Model integration. | **IN PROGRESS** (Documented) |
-| **GraphHopper Routing Service** | Container / Local | Active local routing container serving shortest and risk-penalized paths. | **PLANNED** (Step 5) |
+| **Automated Test Suite** | `services/api/src/tests` | 16 automated tests covering validation, lifecycle, GeoJSON formatting, weather, and routing client/service. | **WORKING** |
+| **Risk-Aware Routing Extension** | `services/routing` | Dynamic hazard avoidance using GraphHopper Custom Models with real-time incident/weather overlays. | **PLANNED** (Step 8) |
 | **Terrain & Landslide ML Model** | `services/ml` | Supervised model (Random Forest/XGBoost) trained on GSI/NASA events + Open-Meteo historical rainfall. | **PLANNED** (Step 7) |
-| **Full Operations Dashboard UI** | `apps/web` | Extended metrics, filters, and analytics console. | **PLANNED** (Step 9) |
 | **Mobile Field App** | `apps/mobile` | Offline-capable Leaflet mobile app for incident reporting and hazard alerts. | **PLANNED** (Step 9) |
 
 ---
 
-## 2. Conceptual Architecture Flow (Step 4 Milestone)
+## 2. Conceptual Architecture Flow (Step 5 Milestone)
 
 ```mermaid
 graph TD
     %% PostGIS & Data
     subgraph Data_Layer ["Data & Storage Layer (WORKING)"]
         PostGIS[(PostgreSQL + PostGIS)]
-        Migrations[SQL Migrations: 001, 002, 003]
-        Seeds[Seed Data: SAURA-001..003]
+        OSMGraph[(OSM North-East Road Graph)]
     end
 
     %% External Services
@@ -41,11 +40,17 @@ graph TD
         OpenMeteo[Open-Meteo Weather API]
     end
 
+    %% Routing Engine
+    subgraph Routing_Engine ["Local Routing Engine (WORKING)"]
+        GH[GraphHopper 10.2 :8989]
+    end
+
     %% Backend Services
     subgraph API_Services ["Node.js API Services (WORKING)"]
         WeatherSvc[Normalized Weather Service]
         IncidentSvc[Incident Domain Service]
         VehicleSvc[Vehicle Tracking Service]
+        RoutingSvc[Routing Service & GH Client]
         Validator[Input Validation Middleware]
     end
 
@@ -55,21 +60,24 @@ graph TD
     end
 
     %% Frontend Web
-    subgraph Web_Client ["Web Operations View (WORKING)"]
+    subgraph Web_Client ["Web Operations & Routing View (WORKING)"]
         MapLibre[MapLibre GL JS Map]
         ThemeCfg[Centralized map-theme.ts]
+        RouteUI[Route Calculator & Metric Badges]
         Popup[Interactive Inspector Popups]
     end
 
     OpenMeteo --> WeatherSvc
-    Migrations --> PostGIS
-    Seeds --> PostGIS
+    OSMGraph --> GH
+    GH <--> RoutingSvc
     PostGIS <--> IncidentSvc
     PostGIS <--> VehicleSvc
-    Validator --> IncidentSvc & VehicleSvc & WeatherSvc
+    Validator --> IncidentSvc & VehicleSvc & WeatherSvc & RoutingSvc
     SimScript -->|POST /api/vehicles/:id/location| VehicleSvc
     IncidentSvc -->|GeoJSON FeatureCollection| MapLibre
     VehicleSvc -->|GeoJSON FeatureCollection| MapLibre
+    RoutingSvc -->|GeoJSON LineString| MapLibre
     ThemeCfg --> MapLibre
+    RouteUI --> MapLibre
     MapLibre --> Popup
 ```
