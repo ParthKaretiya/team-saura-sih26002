@@ -7,17 +7,20 @@ param(
   [int]$HeapGiB = 4
 )
 
-$ErrorActionPreference = 'Stop'
-
 if ($HeapGiB -lt 1) {
   throw 'HeapGiB must be at least 1.'
 }
 
+$oldEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 try {
-  $javaVersion = & $JavaCommand -version 2>&1 | Select-Object -First 1
+  $versionOutput = cmd.exe /c "$JavaCommand -version 2>&1"
+  $javaVersion = $versionOutput | Select-Object -First 1
 } catch {
+  $ErrorActionPreference = $oldEAP
   throw "Java could not be executed with '$JavaCommand'. Install OpenJDK 17 or provide -JavaCommand."
 }
+$ErrorActionPreference = $oldEAP
 
 if ($javaVersion -notmatch 'version "17\.') {
   throw "GraphHopper 10.2 requires Java 17 for this project. Detected: $javaVersion"
