@@ -32,6 +32,13 @@ export const SEVERITY_THEME: Record<string, SeverityVisualConfig> = {
   },
 };
 
+export const RISK_LEVEL_THEME: Record<string, { color: string; bg: string; text: string }> = {
+  CRITICAL: { color: '#DC2626', bg: '#FEE2E2', text: '#991B1B' },
+  HIGH: { color: '#EA580C', bg: '#FFEDD5', text: '#9A3412' },
+  MEDIUM: { color: '#D97706', bg: '#FEF3C7', text: '#92400E' },
+  LOW: { color: '#059669', bg: '#D1FAE5', text: '#065F46' },
+};
+
 export const DEFAULT_SEVERITY_CONFIG: SeverityVisualConfig = {
   color: '#6B7280',
   radius: 6,
@@ -51,4 +58,11 @@ export const ROUTE_THEME = {
   lineColor: '#2563EB', // Blue
   lineWidth: 5,
   lineOpacity: 0.9,
+};
+
+export const HAZARD_ZONE_THEME = {
+  color: '#8B5CF6', // Purple
+  radius: 8,
+  strokeColor: '#FFFFFF',
+  strokeWidth: 2,
 };

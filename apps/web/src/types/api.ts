@@ -59,3 +59,38 @@ export interface RouteResponse {
   };
   instructions: RouteNavigationInstruction[];
 }
+
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export interface RouteRiskSummary {
+  overallLevel: RiskLevel;
+  meanScore: number;
+  maxScore: number;
+  hazardousSegmentCount: number;
+  dominantTrigger: string;
+  sampledWaypointsCount: number;
+}
+
+export interface HazardZoneFeature {
+  type: 'Feature';
+  geometry: {
+    type: 'Point';
+    coordinates: [number, number]; // [lon, lat]
+  };
+  properties: {
+    id: string;
+    name: string;
+    state: string;
+    severity: string;
+    eventDate?: string;
+    triggerType?: string;
+    fatalities?: number;
+    provenanceSource?: string;
+    description?: string;
+  };
+}
+
+export interface HazardZoneFeatureCollection {
+  type: 'FeatureCollection';
+  features: HazardZoneFeature[];
+}
