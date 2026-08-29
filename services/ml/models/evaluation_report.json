@@ -1,0 +1,42 @@
+{
+  "evaluation_methodology": "5-Fold Stratified Out-of-Fold Cross Validation",
+  "sample_counts": {
+    "total": 40,
+    "positive_events": 20,
+    "negative_controls": 20
+  },
+  "metrics": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "roc_auc": 1.0,
+    "brier_score_loss": 0.001
+  },
+  "confusion_matrix": {
+    "true_negatives": 20,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "true_positives": 20
+  },
+  "scenario_probe_validation": [
+    {
+      "scenario": "Guwahati Brahmaputra Plains (Dry, Flat)",
+      "probability": 0.0,
+      "prediction": "NO_HAZARD",
+      "expected": "LOW"
+    },
+    {
+      "scenario": "Nongpoh GS Road Escarpment (Monsoon Storm, Steep)",
+      "probability": 1.0,
+      "prediction": "LANDSLIDE_RISK",
+      "expected": "HIGH"
+    },
+    {
+      "scenario": "Tezpur Foothills (Moderate Rain, Gentle Slopes)",
+      "probability": 0.1,
+      "prediction": "NO_HAZARD",
+      "expected": "LOW_TO_MEDIUM"
+    }
+  ]
+}
