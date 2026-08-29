@@ -1,3 +1,6 @@
+import { RiskLevel, RouteRiskSummary } from './risk.types.js';
+import { MLPredictionData } from './ml.types.js';
+
 /**
  * All GeoJSON positions use [longitude, latitude] ordering (RFC 7946).
  * API request coordinates remain named latitude/longitude objects to avoid
@@ -35,11 +38,68 @@ export interface RouteResponse {
   instructions: RouteNavigationInstruction[];
 }
 
-/**
- * Reserved service-level extension point for a later approved risk-aware
- * routing phase. The Step 5 HTTP API exposes only the standard route.
- */
 export interface RoutingOptions {
   profile?: string;
   customModel?: Record<string, unknown>;
+  alternativeRoutes?: boolean;
+  maxPaths?: number;
+}
+
+export interface CandidateRouteProfile {
+  candidateId: string;
+  name: string;
+  isBaseline: boolean;
+  distanceMeters: number;
+  durationSeconds: number;
+  geometry: RouteGeometry;
+  instructions: RouteNavigationInstruction[];
+  risk: RouteRiskSummary;
+  mlSummary?: {
+    maxProbability: number;
+    meanProbability: number;
+    riskTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    prediction: 'LANDSLIDE_RISK' | 'NO_HAZARD';
+  };
+  compositeCost: number;
+  normalizedCost: {
+    durationScore: number;
+    distanceScore: number;
+    hazardScore: number;
+    totalCost: number;
+  };
+}
+
+export interface RouteOptimizationResult {
+  origin: Coordinate;
+  destination: Coordinate;
+  selectedCandidateId: string;
+  selectedRoute: CandidateRouteProfile;
+  baselineRoute: CandidateRouteProfile;
+  candidatesCount: number;
+  candidates: CandidateRouteProfile[];
+  optimization: {
+    strategy: 'SAFETY_OPTIMIZED' | 'SPEED_BASELINE';
+    selectionReason: string;
+    hazardReductionPercent: number;
+    additionalDistanceKm: number;
+    additionalDurationMinutes: number;
+  };
+}
+
+export interface RerouteEvaluationResult {
+  rerouteRecommended: boolean;
+  reason: string;
+  currentRoute: {
+    riskLevel: RiskLevel;
+    meanRiskScore: number;
+    maxRiskScore: number;
+    hazardousSegmentCount: number;
+  };
+  recommendedRoute?: CandidateRouteProfile;
+  metrics?: {
+    hazardReductionPercent: number;
+    additionalDistanceMeters: number;
+    additionalDurationSeconds: number;
+  };
+  evaluatedCandidatesCount: number;
 }
