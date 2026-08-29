@@ -11,6 +11,11 @@ import {
   updateVehicleLocation,
 } from '../controllers/vehicle.controller.js';
 import { getRoute } from '../controllers/route.controller.js';
+import {
+  getPointRisk,
+  evaluateRouteRisk,
+  getHazardZones,
+} from '../controllers/risk.controller.js';
 
 const router = Router();
 
@@ -31,5 +36,10 @@ router.post('/vehicles/:id/location', updateVehicleLocation);
 
 // Routing
 router.get('/routes', getRoute);
+
+// Risk Intelligence
+router.get('/risk/point', getPointRisk);
+router.post('/risk/route', evaluateRouteRisk);
+router.get('/risk/zones', getHazardZones);
 
 export default router;
