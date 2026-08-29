@@ -1,7 +1,11 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Load .env from project root (two levels up from services/api/)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env from project root
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
 export const dbConfig = {
@@ -10,6 +14,7 @@ export const dbConfig = {
   database: process.env.DB_NAME || 'sauraroute_db',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'sauraroute_dev_2026',
+  connectionTimeoutMillis: 1000, // 1 second timeout to prevent blocking HTTP requests
 };
 
 export const serverConfig = {
