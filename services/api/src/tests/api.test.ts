@@ -1,6 +1,6 @@
 /**
  * SauraRoute Automated Test Suite
- * Tests domain validations, GeoJSON structures, weather normalization, vehicle tracking, and routing pipeline.
+ * Tests domain validations, GeoJSON structures, weather normalization, vehicle tracking, routing pipeline, and Risk Intelligence engine.
  */
 
 import assert from 'assert';
@@ -17,6 +17,8 @@ import { vehicleService } from '../services/vehicle.service.js';
 import { weatherService, WeatherServiceError } from '../services/weather.service.js';
 import { GraphHopperClient, RoutingEngineError } from '../services/graphhopper.client.js';
 import { RoutingService } from '../services/routing.service.js';
+import { riskService, calculateHaversineDistanceKm } from '../services/risk.service.js';
+import { classifyRiskLevel } from '../config/risk.config.js';
 import { IncidentStatus } from '../types/incident.types.js';
 
 let passed = 0;
@@ -200,7 +202,6 @@ async function runTests() {
       assert.ok(typeof weather.current.precipitation === 'number');
       assert.ok(Array.isArray(weather.forecast));
     } catch (err) {
-      // If network/offline during test, verify it thrown controlled WeatherServiceError (502/503)
       assert.ok(err instanceof WeatherServiceError);
       assert.ok([502, 503].includes((err as WeatherServiceError).statusCode));
       console.log(`    (Note: Network offline fallback tested: ${(err as Error).message})`);
@@ -298,6 +299,102 @@ async function runTests() {
         err.statusCode === 503 &&
         err.code === 'ROUTING_ENGINE_UNAVAILABLE'
     );
+  });
+
+  console.log('\n--- 6. Risk Intelligence Engine & Multi-Factor Scoring ---');
+
+  await test('Haversine distance calculation is mathematically accurate', () => {
+    // Guwahati (26.1445, 91.7362) to Shillong (25.5788, 91.8933) is ~64.8 km straight-line
+    const dist = calculateHaversineDistanceKm(26.1445, 91.7362, 25.5788, 91.8933);
+    assert.ok(dist >= 64.0 && dist <= 66.0, `Expected ~65km, got ${dist}`);
+  });
+
+  await test('Rainfall subscore threshold boundaries behave deterministically', () => {
+    assert.strictEqual(riskService.calculateRainfallSubscore(0).subscore, 0);
+    assert.strictEqual(riskService.calculateRainfallSubscore(4.9).subscore, 0);
+    assert.strictEqual(riskService.calculateRainfallSubscore(5.0).subscore, 30);
+    assert.strictEqual(riskService.calculateRainfallSubscore(20.0).subscore, 30);
+    assert.strictEqual(riskService.calculateRainfallSubscore(20.1).subscore, 70);
+    assert.strictEqual(riskService.calculateRainfallSubscore(50.0).subscore, 70);
+    assert.strictEqual(riskService.calculateRainfallSubscore(50.1).subscore, 100);
+    assert.strictEqual(riskService.calculateRainfallSubscore(150.0).subscore, 100);
+  });
+
+  await test('Slope subscore threshold boundaries behave deterministically', () => {
+    assert.strictEqual(riskService.calculateSlopeSubscore(0).subscore, 0);
+    assert.strictEqual(riskService.calculateSlopeSubscore(9.9).subscore, 0);
+    assert.strictEqual(riskService.calculateSlopeSubscore(10.0).subscore, 40);
+    assert.strictEqual(riskService.calculateSlopeSubscore(25.0).subscore, 40);
+    assert.strictEqual(riskService.calculateSlopeSubscore(25.1).subscore, 75);
+    assert.strictEqual(riskService.calculateSlopeSubscore(40.0).subscore, 75);
+    assert.strictEqual(riskService.calculateSlopeSubscore(40.1).subscore, 100);
+  });
+
+  await test('Risk level classification exact boundary checks', () => {
+    assert.strictEqual(classifyRiskLevel(0), 'LOW');
+    assert.strictEqual(classifyRiskLevel(24.99), 'LOW');
+    assert.strictEqual(classifyRiskLevel(25.0), 'MEDIUM');
+    assert.strictEqual(classifyRiskLevel(49.99), 'MEDIUM');
+    assert.strictEqual(classifyRiskLevel(50.0), 'HIGH');
+    assert.strictEqual(classifyRiskLevel(74.99), 'HIGH');
+    assert.strictEqual(classifyRiskLevel(75.0), 'CRITICAL');
+    assert.strictEqual(classifyRiskLevel(100.0), 'CRITICAL');
+  });
+
+  await test('Dry, flat, no-hazard scenario evaluates to LOW', async () => {
+    const pointRisk = await riskService.evaluatePointRisk(26.1445, 91.7362, {
+      precipitationOverrideMm: 0.0,
+      slopeOverrideDeg: 2.0,
+    });
+
+    assert.ok(pointRisk.score < 25.0, `Expected score < 25, got ${pointRisk.score}`);
+    assert.strictEqual(pointRisk.level, 'LOW');
+    assert.strictEqual(pointRisk.factors.rainfall.subscore, 0);
+    assert.strictEqual(pointRisk.factors.slope.subscore, 0);
+  });
+
+  await test('Torrential rain, steep slope, nearby hazard scenario evaluates to CRITICAL', async () => {
+    const pointRisk = await riskService.evaluatePointRisk(25.9036, 91.8794, {
+      precipitationOverrideMm: 85.0,
+      slopeOverrideDeg: 42.0,
+    });
+
+    assert.ok(pointRisk.score >= 75.0, `Expected score >= 75, got ${pointRisk.score}`);
+    assert.strictEqual(pointRisk.level, 'CRITICAL');
+    assert.strictEqual(pointRisk.factors.rainfall.subscore, 100);
+    assert.strictEqual(pointRisk.factors.slope.subscore, 100);
+  });
+
+  await test('Route risk sampler aggregates corridor-level risk metrics', async () => {
+    // Sample coordinate path along Guwahati-Shillong corridor
+    const coords: [number, number][] = [
+      [91.7362, 26.1445],
+      [91.7821, 25.9810],
+      [91.8012, 25.9021],
+      [91.8520, 25.7500],
+      [91.8933, 25.5788],
+    ];
+
+    const routeRisk = await riskService.evaluateRouteRisk(coords);
+    assert.ok(typeof routeRisk.meanScore === 'number');
+    assert.ok(typeof routeRisk.maxScore === 'number');
+    assert.ok(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes(routeRisk.overallLevel));
+    assert.ok(routeRisk.sampledWaypointsCount >= 2);
+    assert.ok(Array.isArray(routeRisk.waypoints));
+  });
+
+  await test('Hazard zones GeoJSON FeatureCollection returns curated records', () => {
+    const geoJson = riskService.listHazardZones();
+    assert.strictEqual(geoJson.type, 'FeatureCollection');
+    assert.ok(geoJson.features.length >= 10);
+
+    const f1 = geoJson.features[0];
+    assert.strictEqual(f1.geometry.type, 'Point');
+    // GeoJSON [longitude, latitude] check
+    assert.ok(Array.isArray(f1.geometry.coordinates));
+    assert.strictEqual(f1.geometry.coordinates.length, 2);
+    assert.ok(typeof f1.properties.name === 'string');
+    assert.ok(typeof f1.properties.severity === 'string');
   });
 
   console.log('\n==================================================');
