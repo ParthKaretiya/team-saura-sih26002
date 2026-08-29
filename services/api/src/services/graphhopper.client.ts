@@ -1,4 +1,5 @@
 import { Coordinate, RoutingOptions } from '../types/routing.types.js';
+import { OPTIMIZATION_CONFIG } from '../config/optimization.config.js';
 
 export interface GraphHopperInstruction {
   text?: unknown;
@@ -44,12 +45,23 @@ export class GraphHopperClient {
     destination: Coordinate,
     options: RoutingOptions = {},
   ): Promise<GraphHopperPath> {
+    const paths = await this.findCandidateRoutes(origin, destination, options);
+    return paths[0];
+  }
+
+  async findCandidateRoutes(
+    origin: Coordinate,
+    destination: Coordinate,
+    options: RoutingOptions = {},
+  ): Promise<GraphHopperPath[]> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
     const profile = options.profile || this.config.profile;
 
     try {
-      const response = await this.fetchImpl(...this.createRequest(origin, destination, profile, options, controller.signal));
+      const response = await this.fetchImpl(
+        ...this.createRequest(origin, destination, profile, options, controller.signal)
+      );
 
       if (!response.ok) {
         if ([400, 404].includes(response.status)) {
@@ -77,7 +89,7 @@ export class GraphHopperClient {
         );
       }
 
-      return this.parsePath(payload);
+      return this.parseCandidatePaths(payload);
     } catch (error) {
       if (error instanceof RoutingEngineError) throw error;
       if ((error as Error).name === 'AbortError') {
@@ -132,31 +144,64 @@ export class GraphHopperClient {
     url.searchParams.set('profile', profile);
     url.searchParams.set('points_encoded', 'false');
     url.searchParams.set('instructions', 'true');
+
+    if (options.alternativeRoutes) {
+      const maxPaths = options.maxPaths || OPTIMIZATION_CONFIG.graphHopperAlternatives.maxPaths;
+      url.searchParams.set('algorithm', 'alternative_route');
+      url.searchParams.set('alternative_route.max_paths', String(maxPaths));
+      url.searchParams.set(
+        'alternative_route.max_weight_factor',
+        String(OPTIMIZATION_CONFIG.graphHopperAlternatives.maxWeightFactor)
+      );
+      url.searchParams.set(
+        'alternative_route.max_share_factor',
+        String(OPTIMIZATION_CONFIG.graphHopperAlternatives.maxShareFactor)
+      );
+    }
+
     return [url, { signal }];
   }
 
-  private parsePath(payload: unknown): GraphHopperPath {
-    const path = (payload as { paths?: unknown[] })?.paths?.[0] as Partial<GraphHopperPath> | undefined;
-    const coordinates = path?.points?.coordinates;
-
-    if (
-      !path ||
-      !Number.isFinite(path.distance) ||
-      !Number.isFinite(path.time) ||
-      path.distance! <= 0 ||
-      path.time! <= 0 ||
-      path.points?.type !== 'LineString' ||
-      !Array.isArray(coordinates) ||
-      coordinates.length < 2 ||
-      !coordinates.every(point => Array.isArray(point) && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1]))
-    ) {
+  private parseCandidatePaths(payload: unknown): GraphHopperPath[] {
+    const rawPaths = (payload as { paths?: unknown[] })?.paths;
+    if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
       throw new RoutingEngineError(
-        'GraphHopper returned an invalid route payload.',
+        'GraphHopper returned an invalid route payload with no paths.',
         502,
         'ROUTING_ENGINE_INVALID_RESPONSE',
       );
     }
 
-    return path as GraphHopperPath;
+    const validatedPaths: GraphHopperPath[] = [];
+
+    for (const raw of rawPaths) {
+      const path = raw as Partial<GraphHopperPath>;
+      const coordinates = path?.points?.coordinates;
+
+      if (
+        !path ||
+        !Number.isFinite(path.distance) ||
+        !Number.isFinite(path.time) ||
+        path.distance! <= 0 ||
+        path.time! <= 0 ||
+        path.points?.type !== 'LineString' ||
+        !Array.isArray(coordinates) ||
+        coordinates.length < 2 ||
+        !coordinates.every(point => Array.isArray(point) && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1]))
+      ) {
+        continue;
+      }
+      validatedPaths.push(path as GraphHopperPath);
+    }
+
+    if (validatedPaths.length === 0) {
+      throw new RoutingEngineError(
+        'GraphHopper returned no geometrically valid paths.',
+        502,
+        'ROUTING_ENGINE_INVALID_RESPONSE',
+      );
+    }
+
+    return validatedPaths;
   }
 }
