@@ -1,240 +1,159 @@
-# API Contract (Provisional)
+# API Contract
 
-This document outlines the initial, high-level REST API contracts for the SauraRoute services.
-
-> [!IMPORTANT]
-> **Status: Provisional API Contract**
-> None of these endpoints have been implemented. The inputs, outputs, and paths are subject to changes based on database design, mobile constraints, and client integrations.
+This document outlines the REST API contracts and implementation statuses for the **SauraRoute** platform.
 
 ---
 
-## 1. Authentication
+## 1. Health & System
 
-### `POST /api/auth/login`
-* **Purpose:** Authenticate users (operators, drivers, or administrators) and issue a JWT token.
-* **Authentication Required:** No
-* **Status:** Provisional API Contract
-* **Request Structure:**
+### `GET /api/health`
+* **Status:** IMPLEMENTED (WORKING)
+* **Response Structure:**
   ```json
   {
-    "username": "driver_saura",
-    "password": "securepassword123"
-  }
-  ```
-* **Response Structure (Success):**
-  ```json
-  {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "user": {
-      "id": "usr_908123",
-      "username": "driver_saura",
-      "role": "DRIVER"
+    "status": "healthy",
+    "timestamp": "2026-08-29T10:00:00.000Z",
+    "services": {
+      "database": "connected"
     }
   }
   ```
 
 ---
 
-## 2. Vehicles
+## 2. Weather Integration
 
-### `GET /api/vehicles`
-* **Purpose:** List all active logistics vehicles.
-* **Authentication Required:** Yes (Operator/Admin)
-* **Status:** Provisional API Contract
-* **Request Structure:** None
-* **Response Structure (Success):**
+### `GET /api/weather`
+* **Status:** IMPLEMENTED (WORKING)
+* **Query Parameters:** `lat` (latitude), `lon` (longitude)
+* **Response Structure:**
   ```json
-  [
-    {
-      "id": "vh_001",
-      "plateNumber": "AS-01-XX-1234",
-      "status": "ACTIVE",
-      "lastLocation": {
-        "latitude": 26.1445,
-        "longitude": 91.7362,
-        "updatedAt": "2026-08-29T10:00:00Z"
-      }
+  {
+    "status": "success",
+    "data": {
+      "location": { "latitude": 26.1445, "longitude": 91.7362 },
+      "current": { "temperature": 28.5, "precipitation": 12.4, "weatherCode": 61 },
+      "forecast": []
     }
-  ]
-  ```
-
-### `GET /api/vehicles/:id`
-* **Purpose:** Get a single vehicle's details and active route details.
-* **Authentication Required:** Yes
-* **Status:** Provisional API Contract
-* **Request Structure:** None (Path parameter `:id` is the vehicle ID)
-* **Response Structure (Success):**
-  ```json
-  {
-    "id": "vh_001",
-    "plateNumber": "AS-01-XX-1234",
-    "status": "ACTIVE",
-    "driverId": "usr_908123",
-    "lastLocation": {
-      "latitude": 26.1445,
-      "longitude": 91.7362,
-      "updatedAt": "2026-08-29T10:00:00Z"
-    }
-  }
-  ```
-
-### `POST /api/vehicles/:id/location`
-* **Purpose:** Update the current GPS coordinates of the vehicle (telemetry).
-* **Authentication Required:** Yes (Driver/Device)
-* **Status:** Provisional API Contract
-* **Request Structure:**
-  ```json
-  {
-    "latitude": 26.1445,
-    "longitude": 91.7362,
-    "timestamp": "2026-08-29T10:00:00Z"
-  }
-  ```
-* **Response Structure (Success):**
-  ```json
-  {
-    "success": true,
-    "status": "LOCATION_UPDATED"
   }
   ```
 
 ---
 
-## 3. Incidents & Road Blockages
+## 3. Incidents & Road Disruptions
 
 ### `GET /api/incidents`
-* **Purpose:** Retrieve active road incidents and blockages within the NER. Supports optional bounds filtering.
-* **Authentication Required:** Yes
-* **Status:** Provisional API Contract
-* **Request Structure:** (Optional query parameters e.g. `?status=ACTIVE`)
-* **Response Structure (Success):**
-  ```json
-  [
-    {
-      "id": "inc_442",
-      "type": "LANDSLIDE",
-      "description": "Partial blockage on NH-2 near Kohima",
-      "latitude": 25.6751,
-      "longitude": 94.1086,
-      "status": "ACTIVE",
-      "severity": "HIGH",
-      "reportedAt": "2026-08-29T08:30:00Z"
-    }
-  ]
-  ```
+* **Status:** IMPLEMENTED (WORKING)
+* **Response Structure:** GeoJSON `FeatureCollection` containing `Point` features in `[longitude, latitude]` order.
 
 ### `POST /api/incidents`
-* **Purpose:** Report a new road incident (e.g., landslide, heavy flooding, route blockage). Used by drivers or field agents.
-* **Authentication Required:** Yes
-* **Status:** Provisional API Contract
+* **Status:** IMPLEMENTED (WORKING)
 * **Request Structure:**
   ```json
   {
     "type": "LANDSLIDE",
-    "description": "Mud and rocks blocking the single-lane pass",
-    "latitude": 25.6751,
-    "longitude": 94.1086,
-    "severity": "HIGH"
-  }
-  ```
-* **Response Structure (Success):**
-  ```json
-  {
-    "id": "inc_442",
-    "status": "SUBMITTED",
-    "message": "Incident report submitted successfully"
+    "severity": "HIGH",
+    "description": "Debris on NH-40 corridor",
+    "latitude": 25.9021,
+    "longitude": 91.8012
   }
   ```
 
-### `PATCH /api/incidents/:id`
-* **Purpose:** Update the status or resolution of a reported incident.
-* **Authentication Required:** Yes (Operator/Admin)
-* **Status:** Provisional API Contract
-* **Request Structure:**
+### `PATCH /api/incidents/:id/status`
+* **Status:** IMPLEMENTED (WORKING)
+* **Request Structure:** `{ "status": "VERIFIED" }`
+
+---
+
+## 4. Vehicle Telemetry & Fleet Tracking
+
+### `GET /api/vehicles`
+* **Status:** IMPLEMENTED (WORKING)
+* **Response Structure:** GeoJSON `FeatureCollection` with vehicle locations, headings, and speeds.
+
+### `POST /api/vehicles/:id/location`
+* **Status:** IMPLEMENTED (WORKING)
+* **Request Structure:** `{ "latitude": 26.15, "longitude": 91.74, "speed": 45.0, "heading": 140.0 }`
+
+---
+
+## 5. Routing Engine (GraphHopper 10.2)
+
+### `GET /api/routes`
+* **Status:** IMPLEMENTED (WORKING)
+* **Query Parameters:** `originLat`, `originLon`, `destinationLat`, `destinationLon`
+* **Response Structure:**
   ```json
   {
-    "status": "RESOLVED",
-    "resolutionDetails": "Debris cleared by local recovery team. Road fully open."
-  }
-  ```
-* **Response Structure (Success):**
-  ```json
-  {
-    "id": "inc_442",
-    "status": "RESOLVED",
-    "updatedAt": "2026-08-29T10:15:00Z"
+    "status": "success",
+    "data": {
+      "origin": { "latitude": 26.1445, "longitude": 91.7362 },
+      "destination": { "latitude": 25.5788, "longitude": 91.8933 },
+      "distanceMeters": 95992,
+      "durationSeconds": 5274,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[91.736153, 26.144276], [91.893275, 25.578769]]
+      },
+      "instructions": []
+    }
   }
   ```
 
 ---
 
-## 4. Route Optimization
+## 6. Risk Intelligence (Step 6)
 
-### `POST /api/routes/optimize`
-* **Purpose:** Calculate the optimal route between an origin and destination coordinate, taking into account distances, active incidents, and predicted terrain hazards.
-* **Authentication Required:** Yes
-* **Status:** Provisional API Contract
+### `GET /api/risk/point`
+* **Status:** IMPLEMENTED (WORKING)
+* **Query Parameters:** `lat` (latitude), `lon` (longitude)
+* **Response Structure:**
+  ```json
+  {
+    "status": "success",
+    "data": {
+      "location": { "latitude": 26.1445, "longitude": 91.7362 },
+      "score": 68.5,
+      "level": "HIGH",
+      "factors": {
+        "rainfall": { "subscore": 70.0, "valueMm": 38.4, "weight": 0.35, "description": "Heavy precipitation alert (38.4mm)" },
+        "slope": { "subscore": 75.0, "degrees": 32.5, "weight": 0.25, "description": "Steep mountain escarpment (32.5°)" },
+        "activeIncidents": { "subscore": 80.0, "nearestDistanceKm": 4.2, "countWithin15km": 1, "weight": 0.25, "description": "Active HIGH incident 4.2km away" },
+        "historicalHotspots": { "subscore": 60.0, "nearestDistanceKm": 3.1, "nearestName": "Nongpoh Slide", "weight": 0.15, "description": "Known historical landslide zone: Nongpoh 3.1km away" }
+      },
+      "summary": "HIGH risk driven by heavy precipitation (38.4mm), steep escarpment (32.5°), and nearby active incident."
+    }
+  }
+  ```
+
+### `POST /api/risk/route`
+* **Status:** IMPLEMENTED (WORKING)
 * **Request Structure:**
   ```json
   {
-    "origin": {
-      "latitude": 26.1445,
-      "longitude": 91.7362
-    },
-    "destination": {
-      "latitude": 25.6751,
-      "longitude": 94.1086
-    },
-    "vehicleType": "HEAVY_CARGO",
-    "avoidHighRiskZones": true
-  }
-  ```
-* **Response Structure (Success):**
-  ```json
-  {
-    "distanceKm": 345.2,
-    "estimatedDurationMinutes": 510,
-    "riskIndex": 0.12,
-    "pathGeoJSON": {
-      "type": "LineString",
-      "coordinates": [
-        [91.7362, 26.1445],
-        [92.5123, 25.9221],
-        [94.1086, 25.6751]
-      ]
-    },
-    "alerts": [
-      {
-        "message": "Vulnerability warning: Moderate rainfall forecast along NH-2 corridor.",
-        "severity": "MEDIUM"
-      }
+    "coordinates": [
+      [91.7362, 26.1445],
+      [91.7821, 25.9810],
+      [91.8933, 25.5788]
     ]
   }
   ```
-
----
-
-## 5. Machine Learning / Risk Prediction
-
-### `POST /api/risk/predict`
-* **Purpose:** Evaluate the immediate hazard level of a specific road segment based on meteorological and terrain parameters. Internal endpoint called by route optimizer.
-* **Authentication Required:** Yes (Internal/API Token)
-* **Status:** Provisional API Contract
-* **Request Structure:**
+* **Response Structure:**
   ```json
   {
-    "segmentId": "seg_nh02_90",
-    "currentRainfallMm": 45.2,
-    "soilSaturation": 0.85,
-    "slopeGradient": 32.5
+    "status": "success",
+    "data": {
+      "overallLevel": "HIGH",
+      "meanScore": 58.2,
+      "maxScore": 72.0,
+      "hazardousSegmentCount": 2,
+      "dominantTrigger": "Steep Terrain",
+      "sampledWaypointsCount": 18,
+      "waypoints": []
+    }
   }
   ```
-* **Response Structure (Success):**
-  ```json
-  {
-    "segmentId": "seg_nh02_90",
-    "landslideProbability": 0.78,
-    "riskLevel": "CRITICAL",
-    "confidenceScore": 0.89
-  }
-  ```
+
+### `GET /api/risk/zones`
+* **Status:** IMPLEMENTED (WORKING)
+* **Response Structure:** GeoJSON `FeatureCollection` of curated reference historical landslide hazard points across the North Eastern Region.

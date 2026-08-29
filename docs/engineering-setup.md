@@ -106,17 +106,31 @@ GRAPHHOPPER_PROFILE=car
   ```bash
   curl "http://localhost:3000/api/routes?originLat=26.1445&originLon=91.7362&destinationLat=25.5788&destinationLon=91.8933"
   ```
-  *Expected:* `200 OK`, `distanceMeters ~ 95992`, `durationSeconds ~ 5274`, `LineString` geometry with 3,278 coordinates.
 
-### 2. Verify Incidents & Vehicles
+### 2. Verify Risk Intelligence Foundation (Step 6)
+* **Point Risk Assessment:**
+  ```bash
+  curl "http://localhost:3000/api/risk/point?lat=25.9036&lon=91.8794"
+  ```
+  *Expected:* `200 OK`, `score` $[0, 100]$, `level` (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`), factor subscores for `rainfall`, `slope`, `activeIncidents`, and `historicalHotspots`.
+* **Corridor Route Risk Assessment:**
+  ```bash
+  curl -X POST "http://localhost:3000/api/risk/route" -H "Content-Type: application/json" -d "{\"coordinates\": [[91.7362, 26.1445], [91.7821, 25.9810], [91.8933, 25.5788]]}"
+  ```
+* **Hazard Zones GeoJSON:**
+  ```bash
+  curl "http://localhost:3000/api/risk/zones"
+  ```
+
+### 3. Verify Incidents & Vehicles
 * **Weather Integration:** `GET http://localhost:3000/api/weather?lat=26.1445&lon=91.7362`
 * **List Incidents (GeoJSON):** `GET http://localhost:3000/api/incidents`
 * **List Vehicles (GeoJSON):** `GET http://localhost:3000/api/vehicles`
 
-### 3. Verify Web Application (MapLibre GL JS)
+### 4. Verify Web Application (MapLibre GL JS)
 1. Open `http://localhost:5173`.
 2. Inspect the map:
-   * **Basemap:** OpenStreetMap raster tiles loaded and responsive.
-   * **Incidents & Vehicles:** Live markers color-coded by severity and moving trucks.
-   * **Route Calculator:** Click preset *"Guwahati → Shillong"* and press *"Calculate Highway Route"*.
-   * **Visual Route Line:** The blue highway LineString is drawn on the map, the camera zooms to fit the corridor, and metrics display `96.0 km` and `1h 28m`.
+   * **Basemap & Hazard Zones:** Purple markers indicating cataloged historical landslide events across the NER with toggle checkbox in legend.
+   * **Incidents & Fleet:** Active hazards and trucks moving live.
+   * **Route & Risk Calculation:** Select *"Guwahati → Shillong"* and press *"Calculate Route & Assess Risk"*.
+   * **Visuals:** Blue highway line renders on map, zooming to corridor, and displays Distance, Travel Time, and **Corridor Risk Level Banner** (`HIGH RISK (62/100) — Primary Trigger: Steep Terrain`).
