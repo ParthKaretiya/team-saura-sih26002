@@ -46,3 +46,9 @@ export const VEHICLE_THEME = {
   strokeColor: '#FFFFFF',
   strokeWidth: 2,
 };
+
+export const ROUTE_THEME = {
+  lineColor: '#2563EB', // Blue
+  lineWidth: 5,
+  lineOpacity: 0.9,
+};

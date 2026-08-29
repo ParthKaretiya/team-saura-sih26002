@@ -41,3 +41,21 @@ export interface VehicleFeatureCollection {
   type: 'FeatureCollection';
   features: VehicleFeature[];
 }
+
+export interface RouteNavigationInstruction {
+  text: string;
+  distanceMeters: number;
+  durationSeconds: number;
+}
+
+export interface RouteResponse {
+  origin: { latitude: number; longitude: number };
+  destination: { latitude: number; longitude: number };
+  distanceMeters: number;
+  durationSeconds: number;
+  geometry: {
+    type: 'LineString';
+    coordinates: [number, number][]; // [lon, lat]
+  };
+  instructions: RouteNavigationInstruction[];
+}
