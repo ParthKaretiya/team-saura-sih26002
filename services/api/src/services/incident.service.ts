@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { pool } from '../db/connection.js';
+import { pool, getDbAvailability } from '../db/connection.js';
 import {
   IncidentType,
   IncidentSeverity,
@@ -10,8 +10,24 @@ import {
 } from '../types/incident.types.js';
 import { validateStatusTransition } from '../utils/validation.js';
 
-// In-memory store fallback when PostgreSQL container is not running
-const inMemoryIncidents = new Map<string, IncidentRecord>();
+// In-memory store fallback with initial seed data
+const inMemoryIncidents = new Map<string, IncidentRecord>([
+  [
+    'inc_sample_001',
+    {
+      id: 'inc_sample_001',
+      type: 'LANDSLIDE',
+      severity: 'CRITICAL',
+      description: 'Major rockfall on NH-40 near Nongpoh',
+      latitude: 25.9021,
+      longitude: 91.8012,
+      status: 'REPORTED',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      resolved_at: null,
+    },
+  ],
+]);
 
 export class IncidentService {
   async createIncident(params: {
@@ -24,45 +40,49 @@ export class IncidentService {
     const id = `inc_${crypto.randomUUID().slice(0, 8)}`;
     const now = new Date().toISOString();
 
-    try {
-      const client = await pool.connect();
+    if (getDbAvailability()) {
       try {
-        const query = `
-          INSERT INTO incidents (id, type, severity, description, location, status, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326), 'REPORTED', NOW(), NOW())
-          RETURNING id, type, severity, description, ST_X(location) as longitude, ST_Y(location) as latitude, status, created_at, updated_at, resolved_at;
-        `;
-        const { rows } = await client.query(query, [
-          id,
-          params.type,
-          params.severity,
-          params.description,
-          params.longitude, // PostGIS MakePoint takes (X/lon, Y/lat)
-          params.latitude,
-        ]);
-        const record = rows[0] as IncidentRecord;
-        inMemoryIncidents.set(record.id, record);
-        return record;
-      } finally {
-        client.release();
+        const client = await pool.connect();
+        try {
+          const query = `
+            INSERT INTO incidents (id, type, severity, description, location, status, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326), 'REPORTED', NOW(), NOW())
+            RETURNING id, type, severity, description, ST_X(location) as longitude, ST_Y(location) as latitude, status, created_at, updated_at, resolved_at;
+          `;
+          const { rows } = await client.query(query, [
+            id,
+            params.type,
+            params.severity,
+            params.description,
+            params.longitude, // PostGIS MakePoint takes (X/lon, Y/lat)
+            params.latitude,
+          ]);
+          const record = rows[0] as IncidentRecord;
+          inMemoryIncidents.set(record.id, record);
+          return record;
+        } finally {
+          client.release();
+        }
+      } catch {
+        // Fallback below
       }
-    } catch {
-      // Fallback in-memory
-      const fallbackRecord: IncidentRecord = {
-        id,
-        type: params.type,
-        severity: params.severity,
-        description: params.description,
-        latitude: params.latitude,
-        longitude: params.longitude,
-        status: 'REPORTED',
-        created_at: now,
-        updated_at: now,
-        resolved_at: null,
-      };
-      inMemoryIncidents.set(id, fallbackRecord);
-      return fallbackRecord;
     }
+
+    // Fallback in-memory
+    const fallbackRecord: IncidentRecord = {
+      id,
+      type: params.type,
+      severity: params.severity,
+      description: params.description,
+      latitude: params.latitude,
+      longitude: params.longitude,
+      status: 'REPORTED',
+      created_at: now,
+      updated_at: now,
+      resolved_at: null,
+    };
+    inMemoryIncidents.set(id, fallbackRecord);
+    return fallbackRecord;
   }
 
   async listIncidents(filters?: {
@@ -72,37 +92,43 @@ export class IncidentService {
   }): Promise<IncidentFeatureCollection> {
     let records: IncidentRecord[] = [];
 
-    try {
-      const client = await pool.connect();
+    if (getDbAvailability()) {
       try {
-        let query = `
-          SELECT id, type, severity, description, ST_X(location) as longitude, ST_Y(location) as latitude, status, created_at, updated_at, resolved_at
-          FROM incidents
-          WHERE 1=1
-        `;
-        const values: unknown[] = [];
-        let paramIdx = 1;
+        const client = await pool.connect();
+        try {
+          let query = `
+            SELECT id, type, severity, description, ST_X(location) as longitude, ST_Y(location) as latitude, status, created_at, updated_at, resolved_at
+            FROM incidents
+            WHERE 1=1
+          `;
+          const values: unknown[] = [];
+          let paramIdx = 1;
 
-        if (filters?.status) {
-          query += ` AND status = $${paramIdx++}`;
-          values.push(filters.status);
-        }
-        if (filters?.severity) {
-          query += ` AND severity = $${paramIdx++}`;
-          values.push(filters.severity);
-        }
-        if (filters?.type) {
-          query += ` AND type = $${paramIdx++}`;
-          values.push(filters.type);
-        }
+          if (filters?.status) {
+            query += ` AND status = $${paramIdx++}`;
+            values.push(filters.status);
+          }
+          if (filters?.severity) {
+            query += ` AND severity = $${paramIdx++}`;
+            values.push(filters.severity);
+          }
+          if (filters?.type) {
+            query += ` AND type = $${paramIdx++}`;
+            values.push(filters.type);
+          }
 
-        query += ' ORDER BY created_at DESC;';
-        const { rows } = await client.query(query, values);
-        records = rows as IncidentRecord[];
-      } finally {
-        client.release();
+          query += ' ORDER BY created_at DESC;';
+          const { rows } = await client.query(query, values);
+          records = rows as IncidentRecord[];
+        } finally {
+          client.release();
+        }
+      } catch {
+        // Fallback below
       }
-    } catch {
+    }
+
+    if (records.length === 0) {
       // Fallback in-memory
       records = Array.from(inMemoryIncidents.values());
       if (filters?.status) {
@@ -145,49 +171,50 @@ export class IncidentService {
   async updateIncidentStatus(id: string, newStatus: IncidentStatus): Promise<IncidentRecord | null> {
     const now = new Date().toISOString();
 
-    try {
-      const client = await pool.connect();
+    if (getDbAvailability()) {
       try {
-        // Fetch existing
-        const { rows: existingRows } = await client.query(
-          'SELECT status FROM incidents WHERE id = $1',
-          [id]
-        );
-        if (existingRows.length === 0) return null;
+        const client = await pool.connect();
+        try {
+          const { rows: existingRows } = await client.query(
+            'SELECT status FROM incidents WHERE id = $1',
+            [id]
+          );
+          if (existingRows.length === 0) return null;
 
-        const currentStatus = existingRows[0].status as IncidentStatus;
-        validateStatusTransition(currentStatus, newStatus);
+          const currentStatus = existingRows[0].status as IncidentStatus;
+          validateStatusTransition(currentStatus, newStatus);
 
-        const query = `
-          UPDATE incidents
-          SET status = $1,
-              updated_at = NOW(),
-              resolved_at = CASE WHEN $1 = 'RESOLVED' THEN NOW() ELSE resolved_at END
-          WHERE id = $2
-          RETURNING id, type, severity, description, ST_X(location) as longitude, ST_Y(location) as latitude, status, created_at, updated_at, resolved_at;
-        `;
-        const { rows } = await client.query(query, [newStatus, id]);
-        const record = rows[0] as IncidentRecord;
-        inMemoryIncidents.set(record.id, record);
-        return record;
-      } finally {
-        client.release();
+          const query = `
+            UPDATE incidents
+            SET status = $1,
+                updated_at = NOW(),
+                resolved_at = CASE WHEN $1 = 'RESOLVED' THEN NOW() ELSE resolved_at END
+            WHERE id = $2
+            RETURNING id, type, severity, description, ST_X(location) as longitude, ST_Y(location) as latitude, status, created_at, updated_at, resolved_at;
+          `;
+          const { rows } = await client.query(query, [newStatus, id]);
+          const record = rows[0] as IncidentRecord;
+          inMemoryIncidents.set(record.id, record);
+          return record;
+        } finally {
+          client.release();
+        }
+      } catch (err) {
+        if ((err as Error).name === 'ValidationError') throw err;
       }
-    } catch (err) {
-      if ((err as Error).name === 'ValidationError') throw err;
-
-      // Fallback in-memory
-      const existing = inMemoryIncidents.get(id);
-      if (!existing) return null;
-
-      validateStatusTransition(existing.status, newStatus);
-      existing.status = newStatus;
-      existing.updated_at = now;
-      if (newStatus === 'RESOLVED') {
-        existing.resolved_at = now;
-      }
-      return existing;
     }
+
+    // Fallback in-memory
+    const existing = inMemoryIncidents.get(id);
+    if (!existing) return null;
+
+    validateStatusTransition(existing.status, newStatus);
+    existing.status = newStatus;
+    existing.updated_at = now;
+    if (newStatus === 'RESOLVED') {
+      existing.resolved_at = now;
+    }
+    return existing;
   }
 }
 
