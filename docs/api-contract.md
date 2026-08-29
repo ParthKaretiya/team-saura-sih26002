@@ -157,3 +157,61 @@ This document outlines the REST API contracts and implementation statuses for th
 ### `GET /api/risk/zones`
 * **Status:** IMPLEMENTED (WORKING)
 * **Response Structure:** GeoJSON `FeatureCollection` of curated reference historical landslide hazard points across the North Eastern Region.
+
+---
+
+## 6. Machine Learning Classifiers (Step 7)
+
+### `GET /api/ml/predict`
+* **Status:** IMPLEMENTED (WORKING)
+* **Query Parameters:** `lat` (latitude), `lon` (longitude)
+* **Response Structure:**
+  ```json
+  {
+    "status": "success",
+    "data": {
+      "prediction": "LANDSLIDE_RISK",
+      "probability": 0.88,
+      "risk_tier": "CRITICAL",
+      "confidence": 0.76,
+      "modelVersion": "v1.0.0-rf-step7",
+      "location": { "latitude": 25.9036, "longitude": 91.8794 },
+      "features": {
+        "precipitation_24h_mm": 140.0,
+        "slope_degrees": 38.0,
+        "distance_to_hotspot_km": 0.0,
+        "active_incident_count_15km": 1,
+        "elevation_m": 750.0,
+        "soil_saturation_index": 0.95
+      },
+      "featureImportance": {
+        "elevation_m": 0.24,
+        "slope_degrees": 0.22,
+        "distance_to_hotspot_km": 0.20,
+        "precipitation_24h_mm": 0.18,
+        "soil_saturation_index": 0.16,
+        "active_incident_count_15km": 0.00
+      }
+    }
+  }
+  ```
+
+### `POST /api/ml/predict`
+* **Status:** IMPLEMENTED (WORKING)
+* **Request Structure (Feature Vector):**
+  ```json
+  {
+    "features": {
+      "precipitation_24h_mm": 85.0,
+      "slope_degrees": 35.0,
+      "distance_to_hotspot_km": 2.5,
+      "active_incident_count_15km": 0,
+      "elevation_m": 600.0,
+      "soil_saturation_index": 0.75
+    }
+  }
+  ```
+
+### `GET /api/ml/model`
+* **Status:** IMPLEMENTED (WORKING)
+* **Response Structure:** Model metadata, algorithm parameters, 5-fold cross-validation accuracy, and feature importances.

@@ -134,3 +134,23 @@ GRAPHHOPPER_PROFILE=car
    * **Incidents & Fleet:** Active hazards and trucks moving live.
    * **Route & Risk Calculation:** Select *"Guwahati → Shillong"* and press *"Calculate Route & Assess Risk"*.
    * **Visuals:** Blue highway line renders on map, zooming to corridor, and displays Distance, Travel Time, and **Corridor Risk Level Banner** (`HIGH RISK (62/100) — Primary Trigger: Steep Terrain`).
+
+### 5. Verify Machine Learning Classifiers (Step 7)
+* **Run Python ML Tests:**
+  ```bash
+  python services/ml/src/test_classifier.py
+  python services/ml/src/test_slope.py
+  ```
+* **Train Random Forest Classifier:**
+  ```bash
+  python services/ml/src/train_classifier.py
+  ```
+* **Evaluate 5-Fold Stratified Metrics:**
+  ```bash
+  python services/ml/src/evaluate_model.py
+  ```
+* **ML API Prediction:**
+  ```bash
+  curl "http://localhost:3000/api/ml/predict?lat=25.9036&lon=91.8794"
+  curl "http://localhost:3000/api/ml/model"
+  ```

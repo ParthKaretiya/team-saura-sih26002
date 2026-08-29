@@ -19,8 +19,8 @@ This document describes the high-level architecture and current engineering impl
 | **Risk Intelligence Engine** | `services/api/src/services` | Multi-factor risk engine (`risk.service.ts`) computing weighted score $[0, 100]$ from Weather ($35\%$) + Slope ($25\%$) + Incidents ($25\%$) + Historical Hotspots ($15\%$), route sampling, and `/api/risk/*` endpoints. | **WORKING** |
 | **Interactive Map Dashboard** | `apps/web` | React + MapLibre GL JS rendering live hazard markers, vehicles, route LineStrings, corridor risk indicator banner, and toggleable hazard zone overlays. | **WORKING** |
 | **DEM & Slope Engine** | `services/ml` | Python DEM processor (`dem_processor.py`) calculating slope angles from elevation arrays, verified by `test_slope.py`. | **WORKING** |
-| **Automated Test Suite** | `services/api/src/tests` | 24 automated tests covering validation, lifecycle, GeoJSON formatting, weather, routing, risk scoring thresholds, and route sampling. | **WORKING** |
-| **Terrain & Landslide ML Classifier** | `services/ml` | Supervised model (Random Forest/XGBoost) trained on GSI/NASA events + Open-Meteo historical rainfall. | **PLANNED** (Step 7) |
+| **Terrain & Landslide ML Classifier** | `services/ml` | Supervised Random Forest model trained on 40 balanced samples (20 historical + 20 baseline controls), 5-fold CV ($100\%$ acc), and `/api/ml/*` endpoints. | **WORKING** |
+| **Automated Test Suite** | `services/api/src/tests` & `services/ml/src/` | 50 automated tests (42 backend tests + 8 Python ML unit tests) covering validation, lifecycle, routing, risk scoring, and ML classifiers. | **WORKING** |
 | **Risk-Aware Dynamic Rerouting** | `services/routing` | Dynamic hazard avoidance using GraphHopper Custom Models with real-time risk overlays. | **PLANNED** (Step 8) |
 | **Mobile Field App** | `apps/mobile` | Offline-capable Leaflet mobile app for incident reporting and hazard alerts. | **PLANNED** (Step 9) |
 
