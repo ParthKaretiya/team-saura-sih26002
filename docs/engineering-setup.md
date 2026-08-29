@@ -41,57 +41,49 @@ DB_URL=postgresql://postgres:sauraroute_dev_2026@localhost:5432/sauraroute_db
    ```bash
    docker compose up -d db
    ```
-2. Check container health:
+2. Run database migrations:
    ```bash
-   docker ps -f name=sauraroute-db
+   cd services/api
+   npm run db:migrate
+   ```
+3. Seed baseline vehicles and sample incident:
+   ```bash
+   npm run db:seed
    ```
 
 ### Service B: Node.js API (`services/api`)
-1. Navigate to the API folder and install dependencies:
+1. Start the development server (with auto-reload):
    ```bash
    cd services/api
-   npm install
-   ```
-2. Start the development server (with auto-reload):
-   ```bash
    npm run dev
+   # Runs on http://localhost:3000
    ```
-3. Or run the production build:
+2. Run automated test suite:
    ```bash
-   npm run build
-   npm start
+   npm test
    ```
 
-### Service C: Web Application (`apps/web`)
-1. Navigate to the web folder and install dependencies:
+### Service C: Vehicle Telemetry Simulator (`services/api`)
+1. In a separate terminal, start the waypoint-driven telemetry simulator:
+   ```bash
+   cd services/api
+   npx tsx src/scripts/simulate-telematics.ts
+   ```
+   *Emits GPS updates for `SAURA-001`, `SAURA-002`, `SAURA-003` every 3 seconds.*
+
+### Service D: Web Map Dashboard (`apps/web`)
+1. Start the Vite development server:
    ```bash
    cd apps/web
-   npm install
-   ```
-2. Start the Vite development server:
-   ```bash
    npm run dev
+   # Access at http://localhost:5173
    ```
-3. Access the application in your browser at `http://localhost:5173`.
 
-### Service D: Python ML / Terrain Processing (`services/ml`)
-1. Navigate to the ML folder and create/activate a virtual environment:
+### Service E: Python ML / Terrain Processing (`services/ml`)
+1. Activate virtual environment and run slope tests:
    ```bash
    cd services/ml
-   python -m venv venv
-   
-   # On Windows:
-   .\venv\Scripts\activate
-   
-   # On macOS/Linux:
-   source venv/bin/activate
-   ```
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Run slope processing verification:
-   ```bash
+   .\venv\Scripts\activate      # Windows (or source venv/bin/activate on Linux/macOS)
    python src/test_slope.py
    ```
 
@@ -99,59 +91,60 @@ DB_URL=postgresql://postgres:sauraroute_dev_2026@localhost:5432/sauraroute_db
 
 ## 4. How to Verify Each Service
 
-### 1. Verify Node.js API & PostGIS Connection
-Send a request to the health check endpoint:
-* **HTTP:** `GET http://localhost:3000/api/health`
-* **cURL command:**
+### 1. Verify API Endpoints & PostGIS Data
+* **Health Check:** `GET http://localhost:3000/api/health`
+* **Weather Integration:** `GET http://localhost:3000/api/weather?lat=26.1445&lon=91.7362`
+* **List Incidents (GeoJSON):** `GET http://localhost:3000/api/incidents`
+* **Report New Incident:**
   ```bash
-  curl http://localhost:3000/api/health
+  curl -X POST http://localhost:3000/api/incidents \
+    -H "Content-Type: application/json" \
+    -d '{
+      "type": "LANDSLIDE",
+      "severity": "CRITICAL",
+      "description": "Severe rockfall on GS Road",
+      "latitude": 26.0450,
+      "longitude": 91.7730
+    }'
   ```
-* **Expected Response (with PostGIS running):**
-  ```json
-  {
-    "status": "ok",
-    "timestamp": "2026-08-29T05:10:10.420Z",
-    "database": "connected",
-    "postgis": "3.3 USE_GEOS=1 USE_PROJ=1 USE_STATS=1"
-  }
-  ```
-* **Expected Response (without PostGIS running):**
-  ```json
-  {
-    "status": "ok",
-    "timestamp": "2026-08-29T05:10:10.420Z",
-    "database": "disconnected",
-    "postgis": null
-  }
-  ```
+* **List Vehicles (GeoJSON):** `GET http://localhost:3000/api/vehicles`
 
 ### 2. Verify Web Application (MapLibre GL JS)
-1. Run `npm run build` inside `apps/web` to confirm clean TypeScript compilation and asset bundling.
-2. Run `npm run dev` and open `http://localhost:5173`.
-3. Verify that the map canvas initializes centered on the North Eastern Region of India (`longitude: 93.5, latitude: 26.0`) with navigation controls in the top-right corner.
+1. Open `http://localhost:5173`.
+2. Inspect the map:
+   * **Incidents Layer:** Rendered with circles color-coded by severity (`CRITICAL`: Red, `HIGH`: Orange, `MEDIUM`: Amber, `LOW`: Blue).
+   * **Vehicles Layer:** Rendered with emerald green circles showing `SAURA-001`, `SAURA-002`, `SAURA-003`.
+   * **Interactive Popups:** Clicking any marker shows detailed properties.
+   * **Live Polling:** Vehicle markers move across waypoints as the simulator runs.
 
-### 3. Verify Python DEM Slope Processing
-Run the automated test suite:
+### 3. Run Automated Tests
 ```bash
-cd services/ml
-python src/test_slope.py
+cd services/api
+npm test
 ```
 **Expected Output:**
 ```text
 ==================================================
-SauraRoute DEM Slope Processing — Foundation Test
+SauraRoute Automated Verification Suite (Step 4)
 ==================================================
-[*] Target Angle:   0.0° | Computed Mean:   0.0° | Max Error: 0.000000° [PASSED]
-[*] Target Angle:  15.0° | Computed Mean:  15.0° | Max Error: 0.000000° [PASSED]
-[*] Target Angle:  30.0° | Computed Mean:  30.0° | Max Error: 0.000000° [PASSED]
-[*] Target Angle:  45.0° | Computed Mean:  45.0° | Max Error: 0.000000° [PASSED]
-[*] Target Angle:  60.0° | Computed Mean:  60.0° | Max Error: 0.000000° [PASSED]
---------------------------------------------------
-[*] Synthetic Gaussian Hill (100x100 grid, 30m cell resolution):
-    - Min Elevation: 0.0m | Max Elevation: 499.1m
-    - Min Slope:     0.00° | Max Slope:     40.83°
-    - Mean Slope:    7.90°
+--- 1. Validation Utilities ---
+  [PASS] validateCoordinates accepts valid latitude and longitude
+  [PASS] validateCoordinates rejects out-of-range latitude (> 90)
+  [PASS] validateCoordinates rejects out-of-range longitude (> 180)
+  [PASS] validateIncidentType accepts LANDSLIDE and rejects INVALID_TYPE
+  [PASS] validateSeverity accepts CRITICAL and rejects SUPER_HIGH
+  [PASS] validateIncidentStatus accepts REPORTED, VERIFIED, REJECTED, ACTIVE, RESOLVED
+  [PASS] validateStatusTransition enforces lifecycle rules
+--- 2. Incident Service & GeoJSON Standards ---
+  [PASS] IncidentService creates and lists incidents in GeoJSON format
+  [PASS] IncidentService updates status through lifecycle and handles REJECTED
+--- 3. Vehicle Service & Tracking ---
+  [PASS] VehicleService lists seeded vehicles in GeoJSON format
+  [PASS] VehicleService updates vehicle position and handles 404 for unknown vehicle
+--- 4. Weather Service Integration ---
+  [PASS] WeatherService rejects invalid coordinates with 400
+  [PASS] WeatherService fetches and normalizes weather for requested coordinates
 ==================================================
-[+] ALL SLOPE CALCULATIONS VALIDATED SUCCESSFULLY.
+Results: 13 passed, 0 failed.
 ==================================================
 ```
