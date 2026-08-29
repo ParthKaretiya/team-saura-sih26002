@@ -1,0 +1,58 @@
+{
+  "model_name": "SauraRoute-Landslide-RandomForest",
+  "model_version": "v1.0.0-rf-step7",
+  "algorithm": "RandomForestClassifier",
+  "hyperparameters": {
+    "n_estimators": 50,
+    "max_depth": 4,
+    "random_state": 42,
+    "class_weight": "balanced"
+  },
+  "dataset_statistics": {
+    "total_samples": 40,
+    "positive_samples": 20,
+    "negative_samples": 20,
+    "features_count": 6
+  },
+  "cross_validation_5fold": {
+    "mean_accuracy": 1.0,
+    "std_accuracy": 0.0,
+    "mean_roc_auc": 1.0,
+    "std_roc_auc": 0.0
+  },
+  "feature_importances": {
+    "elevation_m": 0.24,
+    "slope_degrees": 0.22,
+    "distance_to_hotspot_km": 0.2,
+    "precipitation_24h_mm": 0.18,
+    "soil_saturation_index": 0.16,
+    "active_incident_count_15km": 0.0
+  },
+  "scaling_pipeline": {
+    "feature_names": [
+      "precipitation_24h_mm",
+      "slope_degrees",
+      "distance_to_hotspot_km",
+      "active_incident_count_15km",
+      "elevation_m",
+      "soil_saturation_index"
+    ],
+    "means": [
+      74.84440436821191,
+      19.630000000000003,
+      33.14468321345182,
+      0.175,
+      623.25,
+      0.5511162700769596
+    ],
+    "stds": [
+      75.57783254968119,
+      17.43769193442756,
+      37.63620631796645,
+      0.37996710383926635,
+      631.5778158706969,
+      0.33500255332133544
+    ],
+    "fitted": true
+  }
+}

@@ -19,6 +19,7 @@ __pycache__/
 .tox/
 .coverage
 htmlcov/
+*.joblib
 
 # Local configuration/secrets
 .env
