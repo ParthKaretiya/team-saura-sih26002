@@ -1,11 +1,11 @@
-import { pool } from '../db/connection.js';
+import { pool, getDbAvailability } from '../db/connection.js';
 import {
   VehicleFeature,
   VehicleFeatureCollection,
   VehicleRecord,
 } from '../types/vehicle.types.js';
 
-// Baseline fallback in-memory store initialized with test vehicles
+// Baseline in-memory store initialized with SAURA-001, SAURA-002, SAURA-003
 const inMemoryVehicles = new Map<string, VehicleRecord>([
   [
     'vh_saura_001',
@@ -55,20 +55,26 @@ export class VehicleService {
   async listVehicles(): Promise<VehicleFeatureCollection> {
     let records: VehicleRecord[] = [];
 
-    try {
-      const client = await pool.connect();
+    if (getDbAvailability()) {
       try {
-        const query = `
-          SELECT id, vehicle_code, ST_X(location) as longitude, ST_Y(location) as latitude, speed, heading, status, created_at, updated_at
-          FROM vehicles
-          ORDER BY vehicle_code ASC;
-        `;
-        const { rows } = await client.query(query);
-        records = rows as VehicleRecord[];
-      } finally {
-        client.release();
+        const client = await pool.connect();
+        try {
+          const query = `
+            SELECT id, vehicle_code, ST_X(location) as longitude, ST_Y(location) as latitude, speed, heading, status, created_at, updated_at
+            FROM vehicles
+            ORDER BY vehicle_code ASC;
+          `;
+          const { rows } = await client.query(query);
+          records = rows as VehicleRecord[];
+        } finally {
+          client.release();
+        }
+      } catch {
+        // Fallback below
       }
-    } catch {
+    }
+
+    if (records.length === 0) {
       // Fallback in-memory
       records = Array.from(inMemoryVehicles.values());
     }
@@ -111,59 +117,64 @@ export class VehicleService {
     const heading = params.heading ?? 0.0;
     const now = new Date().toISOString();
 
-    try {
-      const client = await pool.connect();
+    if (getDbAvailability()) {
       try {
-        const query = `
-          UPDATE vehicles
-          SET location = ST_SetSRID(ST_MakePoint($1, $2), 4326),
-              speed = $3,
-              heading = $4,
-              status = 'ACTIVE',
-              updated_at = NOW()
-          WHERE id = $5 OR vehicle_code = $5
-          RETURNING id, vehicle_code, ST_X(location) as longitude, ST_Y(location) as latitude, speed, heading, status, created_at, updated_at;
-        `;
-        const { rows } = await client.query(query, [
-          params.longitude, // X / lon
-          params.latitude,  // Y / lat
-          speed,
-          heading,
-          vehicleId,
-        ]);
+        const client = await pool.connect();
+        try {
+          const query = `
+            UPDATE vehicles
+            SET location = ST_SetSRID(ST_MakePoint($1, $2), 4326),
+                speed = $3,
+                heading = $4,
+                status = 'ACTIVE',
+                updated_at = NOW()
+            WHERE id = $5 OR vehicle_code = $5
+            RETURNING id, vehicle_code, ST_X(location) as longitude, ST_Y(location) as latitude, speed, heading, status, created_at, updated_at;
+          `;
+          const { rows } = await client.query(query, [
+            params.longitude, // X / lon
+            params.latitude,  // Y / lat
+            speed,
+            heading,
+            vehicleId,
+          ]);
 
-        if (rows.length === 0) return null;
-        const record = rows[0] as VehicleRecord;
-        inMemoryVehicles.set(record.id, record);
-        return record;
-      } finally {
-        client.release();
-      }
-    } catch {
-      // Fallback in-memory
-      let record = inMemoryVehicles.get(vehicleId);
-      if (!record) {
-        // Search by vehicle_code
-        for (const v of inMemoryVehicles.values()) {
-          if (v.vehicle_code === vehicleId) {
-            record = v;
-            break;
+          if (rows.length > 0) {
+            const record = rows[0] as VehicleRecord;
+            inMemoryVehicles.set(record.id, record);
+            return record;
           }
+        } finally {
+          client.release();
+        }
+      } catch {
+        // Fallback below
+      }
+    }
+
+    // Fallback in-memory
+    let record = inMemoryVehicles.get(vehicleId);
+    if (!record) {
+      // Search by vehicle_code
+      for (const v of inMemoryVehicles.values()) {
+        if (v.vehicle_code === vehicleId) {
+          record = v;
+          break;
         }
       }
-
-      if (!record) return null;
-
-      record.latitude = params.latitude;
-      record.longitude = params.longitude;
-      record.speed = speed;
-      record.heading = heading;
-      record.status = 'ACTIVE';
-      record.updated_at = now;
-
-      inMemoryVehicles.set(record.id, record);
-      return record;
     }
+
+    if (!record) return null;
+
+    record.latitude = params.latitude;
+    record.longitude = params.longitude;
+    record.speed = speed;
+    record.heading = heading;
+    record.status = 'ACTIVE';
+    record.updated_at = now;
+
+    inMemoryVehicles.set(record.id, record);
+    return record;
   }
 }
 
