@@ -1,22 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { SEVERITY_THEME } from '../config/map-theme';
-import type { IncidentFeatureCollection, VehicleFeatureCollection } from '../types/api';
+import { SEVERITY_THEME, ROUTE_THEME } from '../config/map-theme';
+import type {
+  IncidentFeatureCollection,
+  VehicleFeatureCollection,
+  RouteResponse,
+} from '../types/api';
 
 const API_BASE_URL = 'http://localhost:3000/api';
 
-// Reliable, direct OpenStreetMap style specification that requires no external style.json fetch
+// Reliable OpenStreetMap raster style
 const OSM_RASTER_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   sources: {
     'osm-tiles': {
       type: 'raster',
-      tiles: [
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      ],
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     },
   },
   layers: [
@@ -30,6 +33,24 @@ const OSM_RASTER_STYLE: maplibregl.StyleSpecification = {
   ],
 };
 
+const PRESET_CORRIDORS = [
+  {
+    name: 'Guwahati → Shillong',
+    origin: '26.1445, 91.7362',
+    destination: '25.5788, 91.8933',
+  },
+  {
+    name: 'Guwahati → Tezpur',
+    origin: '26.1445, 91.7362',
+    destination: '26.6338, 92.7926',
+  },
+  {
+    name: 'Shillong → Cherrapunji',
+    origin: '25.5788, 91.8933',
+    destination: '25.2702, 91.7323',
+  },
+];
+
 export default function Map() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -41,14 +62,20 @@ export default function Map() {
   const [isLive, setIsLive] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<string>('Never');
 
+  // Routing State
+  const [originInput, setOriginInput] = useState<string>('26.1445, 91.7362');
+  const [destInput, setDestInput] = useState<string>('25.5788, 91.8933');
+  const [calculatedRoute, setCalculatedRoute] = useState<RouteResponse | null>(null);
+  const [isRouting, setIsRouting] = useState<boolean>(false);
+  const [routingError, setRoutingError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    // 1. Initialize Map centered on North-East India (Guwahati / Shillong / NER corridor)
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: OSM_RASTER_STYLE,
-      center: [92.5, 26.0], // Centered on Assam / Meghalaya / NER
+      center: [92.2, 26.0], // NER corridor center
       zoom: 7.2,
     });
 
@@ -60,7 +87,45 @@ export default function Map() {
     const setupLayers = () => {
       if (!map.isStyleLoaded()) return;
 
-      // 1. Incidents GeoJSON Layer
+      // 1. Route Geometry Layer (placed underneath markers)
+      if (!map.getSource('route-source')) {
+        map.addSource('route-source', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: [] },
+            properties: {},
+          },
+        });
+
+        // Route casing (outline)
+        map.addLayer({
+          id: 'route-line-casing',
+          type: 'line',
+          source: 'route-source',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#1E3A8A',
+            'line-width': 8,
+            'line-opacity': 0.7,
+          },
+        });
+
+        // Route main line
+        map.addLayer({
+          id: 'route-line',
+          type: 'line',
+          source: 'route-source',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': ROUTE_THEME.lineColor,
+            'line-width': ROUTE_THEME.lineWidth,
+            'line-opacity': ROUTE_THEME.lineOpacity,
+          },
+        });
+      }
+
+      // 2. Incidents Layer
       if (!map.getSource('incidents-source')) {
         map.addSource('incidents-source', {
           type: 'geojson',
@@ -95,7 +160,6 @@ export default function Map() {
           },
         });
 
-        // Click popup for Incidents
         map.on('click', 'incidents-circles', (e) => {
           if (!e.features || e.features.length === 0) return;
           const f = e.features[0];
@@ -126,7 +190,7 @@ export default function Map() {
         map.on('mouseleave', 'incidents-circles', () => { map.getCanvas().style.cursor = ''; });
       }
 
-      // 2. Vehicles GeoJSON Layer
+      // 3. Vehicles Layer
       if (!map.getSource('vehicles-source')) {
         map.addSource('vehicles-source', {
           type: 'geojson',
@@ -139,13 +203,12 @@ export default function Map() {
           source: 'vehicles-source',
           paint: {
             'circle-radius': 9,
-            'circle-color': '#10B981', // Emerald green
+            'circle-color': '#10B981',
             'circle-stroke-width': 3,
             'circle-stroke-color': '#FFFFFF',
           },
         });
 
-        // Click popup for Vehicles
         map.on('click', 'vehicles-circles', (e) => {
           if (!e.features || e.features.length === 0) return;
           const f = e.features[0];
@@ -180,48 +243,37 @@ export default function Map() {
 
     map.on('load', setupLayers);
 
-    // Fetch data immediately and then every 2.5 seconds
+    // Polling Loop for Incidents & Vehicles
     const fetchData = async () => {
       try {
-        // Fetch incidents
         const incRes = await fetch(`${API_BASE_URL}/incidents`);
         if (incRes.ok) {
           const incData = (await incRes.json()) as IncidentFeatureCollection;
           incidentsRef.current = incData;
           setIncidentCount(incData.features.length);
-
           if (map.isStyleLoaded()) {
-            const incSource = map.getSource('incidents-source') as maplibregl.GeoJSONSource;
-            if (incSource) {
-              incSource.setData(incData);
-            } else {
-              setupLayers();
-            }
+            const src = map.getSource('incidents-source') as maplibregl.GeoJSONSource;
+            if (src) src.setData(incData);
+            else setupLayers();
           }
         }
 
-        // Fetch vehicles
         const vhRes = await fetch(`${API_BASE_URL}/vehicles`);
         if (vhRes.ok) {
           const vhData = (await vhRes.json()) as VehicleFeatureCollection;
           vehiclesRef.current = vhData;
           setVehicleCount(vhData.features.length);
-
           if (map.isStyleLoaded()) {
-            const vhSource = map.getSource('vehicles-source') as maplibregl.GeoJSONSource;
-            if (vhSource) {
-              vhSource.setData(vhData);
-            } else {
-              setupLayers();
-            }
+            const src = map.getSource('vehicles-source') as maplibregl.GeoJSONSource;
+            if (src) src.setData(vhData);
+            else setupLayers();
           }
         }
 
         setIsLive(true);
         setLastUpdated(new Date().toLocaleTimeString());
-      } catch (err) {
+      } catch {
         setIsLive(false);
-        console.warn('[Dashboard] Backend connection error:', err);
       }
     };
 
@@ -235,12 +287,86 @@ export default function Map() {
     };
   }, []);
 
+  // Handle Route Calculation
+  const handleCalculateRoute = async (customOrigin?: string, customDest?: string) => {
+    const origStr = customOrigin || originInput;
+    const destStr = customDest || destInput;
+    setRoutingError(null);
+    setIsRouting(true);
+
+    const origParts = origStr.split(',').map((s) => parseFloat(s.trim()));
+    const destParts = destStr.split(',').map((s) => parseFloat(s.trim()));
+
+    if (
+      origParts.length !== 2 ||
+      destParts.length !== 2 ||
+      isNaN(origParts[0]) ||
+      isNaN(origParts[1]) ||
+      isNaN(destParts[0]) ||
+      isNaN(destParts[1])
+    ) {
+      setRoutingError('Please provide coordinates in format: latitude, longitude');
+      setIsRouting(false);
+      return;
+    }
+
+    const [originLat, originLon] = origParts;
+    const [destinationLat, destinationLon] = destParts;
+
+    try {
+      const url = `${API_BASE_URL}/routes?originLat=${originLat}&originLon=${originLon}&destinationLat=${destinationLat}&destinationLon=${destinationLon}`;
+      const res = await fetch(url);
+      const json = await res.json();
+
+      if (!res.ok) {
+        setRoutingError(json.message || `Routing failed: HTTP ${res.status}`);
+        setIsRouting(false);
+        return;
+      }
+
+      const routeData = json.data as RouteResponse;
+      setCalculatedRoute(routeData);
+
+      if (mapRef.current) {
+        const map = mapRef.current;
+        const routeSrc = map.getSource('route-source') as maplibregl.GeoJSONSource;
+        if (routeSrc) {
+          routeSrc.setData({
+            type: 'Feature',
+            geometry: routeData.geometry,
+            properties: {},
+          });
+        }
+
+        // Fit bounds to route
+        const coords = routeData.geometry.coordinates;
+        if (coords.length > 0) {
+          const bounds = coords.reduce(
+            (b, c) => b.extend(c as [number, number]),
+            new maplibregl.LngLatBounds(coords[0], coords[0])
+          );
+          map.fitBounds(bounds, { padding: 60, duration: 1000 });
+        }
+      }
+    } catch (err) {
+      setRoutingError(`Network error: ${(err as Error).message}`);
+    } finally {
+      setIsRouting(false);
+    }
+  };
+
+  const handleApplyPreset = (preset: typeof PRESET_CORRIDORS[0]) => {
+    setOriginInput(preset.origin);
+    setDestInput(preset.destination);
+    handleCalculateRoute(preset.origin, preset.destination);
+  };
+
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       {/* Map Container */}
       <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* Operations Legend & Live Status Overlay */}
+      {/* Top-Left: Operations Legend & Live Status */}
       <div
         style={{
           position: 'absolute',
@@ -258,7 +384,16 @@ export default function Map() {
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#111827' }}>SauraRoute Operations</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: isLive ? '#059669' : '#EF4444' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              fontWeight: 600,
+              color: isLive ? '#059669' : '#EF4444',
+            }}
+          >
             <span
               style={{
                 width: 8,
@@ -283,17 +418,55 @@ export default function Map() {
             <strong style={{ color: '#DC2626', fontSize: 13 }}>{incidentCount} incidents</strong>
           </div>
 
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginTop: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#6B7280',
+              marginTop: 10,
+              marginBottom: 6,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+          >
             Hazard Severity
           </div>
           {Object.entries(SEVERITY_THEME).map(([key, cfg]) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, fontSize: 11 }}>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: cfg.color, border: '1px solid #FFFFFF', display: 'inline-block' }} />
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  backgroundColor: cfg.color,
+                  border: '1px solid #FFFFFF',
+                  display: 'inline-block',
+                }}
+              />
               <span>{cfg.label}</span>
             </div>
           ))}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, paddingTop: 6, borderTop: '1px dashed #E5E7EB', fontSize: 11 }}>
-            <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#10B981', border: '1px solid #FFFFFF', display: 'inline-block' }} />
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginTop: 6,
+              paddingTop: 6,
+              borderTop: '1px dashed #E5E7EB',
+              fontSize: 11,
+            }}
+          >
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                backgroundColor: '#10B981',
+                border: '1px solid #FFFFFF',
+                display: 'inline-block',
+              }}
+            />
             <span>Active Logistics Vehicle</span>
           </div>
 
@@ -301,6 +474,168 @@ export default function Map() {
             Refreshed: {lastUpdated}
           </div>
         </div>
+      </div>
+
+      {/* Top-Right: Route Optimization & Navigation Panel */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 16,
+          right: 60,
+          backgroundColor: 'rgba(255, 255, 255, 0.96)',
+          padding: '14px 18px',
+          borderRadius: 10,
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          zIndex: 10,
+          width: 320,
+          border: '1px solid #E5E7EB',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 18 }}>🧭</span>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#111827' }}>
+            Logistics Route Calculator
+          </h3>
+        </div>
+
+        {/* Preset Buttons */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {PRESET_CORRIDORS.map((p) => (
+            <button
+              key={p.name}
+              onClick={() => handleApplyPreset(p)}
+              style={{
+                fontSize: 11,
+                padding: '4px 8px',
+                backgroundColor: '#F3F4F6',
+                border: '1px solid #D1D5DB',
+                borderRadius: 4,
+                cursor: 'pointer',
+                color: '#374151',
+                fontWeight: 500,
+              }}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Inputs */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#4B5563', display: 'block', marginBottom: 2 }}>
+              Origin (Lat, Lon):
+            </label>
+            <input
+              type="text"
+              value={originInput}
+              onChange={(e) => setOriginInput(e.target.value)}
+              placeholder="26.1445, 91.7362"
+              style={{
+                width: '100%',
+                padding: '6px 8px',
+                fontSize: 12,
+                borderRadius: 4,
+                border: '1px solid #D1D5DB',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#4B5563', display: 'block', marginBottom: 2 }}>
+              Destination (Lat, Lon):
+            </label>
+            <input
+              type="text"
+              value={destInput}
+              onChange={(e) => setDestInput(e.target.value)}
+              placeholder="25.5788, 91.8933"
+              style={{
+                width: '100%',
+                padding: '6px 8px',
+                fontSize: 12,
+                borderRadius: 4,
+                border: '1px solid #D1D5DB',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Calculate Button */}
+        <button
+          onClick={() => handleCalculateRoute()}
+          disabled={isRouting}
+          style={{
+            width: '100%',
+            padding: '8px',
+            backgroundColor: isRouting ? '#93C5FD' : '#2563EB',
+            color: '#FFFFFF',
+            border: 'none',
+            borderRadius: 6,
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: isRouting ? 'not-allowed' : 'pointer',
+            transition: 'background-color 0.2s',
+          }}
+        >
+          {isRouting ? 'Calculating Optimal Route...' : 'Calculate Highway Route'}
+        </button>
+
+        {/* Error Display */}
+        {routingError && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: '6px 8px',
+              backgroundColor: '#FEE2E2',
+              color: '#DC2626',
+              fontSize: 11,
+              borderRadius: 4,
+              border: '1px solid #FCA5A5',
+            }}
+          >
+            {routingError}
+          </div>
+        )}
+
+        {/* Route Metrics Summary */}
+        {calculatedRoute && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: '10px 12px',
+              backgroundColor: '#EFF6FF',
+              borderRadius: 6,
+              border: '1px solid #BFDBFE',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 12, color: '#1E40AF', fontWeight: 500 }}>Total Highway Distance:</span>
+              <strong style={{ fontSize: 13, color: '#1E3A8A' }}>
+                {(calculatedRoute.distanceMeters / 1000).toFixed(1)} km
+              </strong>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 12, color: '#1E40AF', fontWeight: 500 }}>Estimated Travel Duration:</span>
+              <strong style={{ fontSize: 13, color: '#1E3A8A' }}>
+                {Math.floor(calculatedRoute.durationSeconds / 3600) > 0
+                  ? `${Math.floor(calculatedRoute.durationSeconds / 3600)}h ${Math.round(
+                      (calculatedRoute.durationSeconds % 3600) / 60
+                    )}m`
+                  : `${Math.round(calculatedRoute.durationSeconds / 60)} min`}
+              </strong>
+            </div>
+
+            <div style={{ fontSize: 11, color: '#3B82F6', marginTop: 4 }}>
+              Navigation Steps: <strong>{calculatedRoute.instructions.length}</strong> | Geometry Points:{' '}
+              <strong>{calculatedRoute.geometry.coordinates.length}</strong>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
