@@ -1,0 +1,37 @@
+# GraphHopper 10.2 local feasibility configuration.
+# Run from the repository root so the relative data paths resolve correctly.
+graphhopper:
+  datareader.file: data/raw/north-eastern-zone-latest.osm.pbf
+  graph.location: data/processed/graphhopper-cache
+
+  profiles:
+    - name: car
+      custom_model_files: [car.json]
+
+  # Flexible mode keeps the first routing spike simple and leaves room for
+  # request-time custom models in a later approved phase.
+  profiles_ch: []
+  profiles_lm: []
+  graph.encoded_values: car_access, car_average_speed
+  import.osm.ignored_highways: footway,cycleway,path,pedestrian,steps
+  graph.dataaccess.default_type: RAM_STORE
+  routing.timeout_ms: 300000
+  routing.non_ch.max_waypoint_distance: 1000000
+
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      bind_host: localhost
+  admin_connectors:
+    - type: http
+      port: 8990
+      bind_host: localhost
+  request_log:
+    appenders: []
+
+logging:
+  appenders:
+    - type: console
+      time_zone: UTC
+      log_format: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
