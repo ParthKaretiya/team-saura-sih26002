@@ -1,5 +1,10 @@
 import { fileURLToPath } from 'url';
+import fs from 'fs';
+import path from 'path';
 import { pool } from './connection.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export async function seedDatabase(): Promise<void> {
   const client = await pool.connect();
@@ -67,6 +72,43 @@ export async function seedDatabase(): Promise<void> {
       ON CONFLICT (id) DO NOTHING;
     `);
     console.log('[Seed] Sample incident seeded: inc_sample_001');
+
+    // 3. Seed Historical Landslides from Curated Dataset
+    const jsonPath = path.join(__dirname, '../data/historical-landslides.json');
+    if (fs.existsSync(jsonPath)) {
+      const landslides = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+      for (const ls of landslides) {
+        await client.query(`
+          INSERT INTO historical_landslides (id, name, location, state, event_date, trigger_type, fatalities, severity, provenance, description, created_at)
+          VALUES (
+            $1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7, $8, $9, $10, $11, NOW()
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            name = $2,
+            location = ST_SetSRID(ST_MakePoint($3, $4), 4326),
+            state = $5,
+            event_date = $6,
+            trigger_type = $7,
+            fatalities = $8,
+            severity = $9,
+            provenance = $10,
+            description = $11;
+        `, [
+          ls.id,
+          ls.name,
+          ls.coordinates[0], // lon
+          ls.coordinates[1], // lat
+          ls.state,
+          ls.eventDate,
+          ls.triggerType,
+          ls.fatalities ?? 0,
+          ls.severity ?? 'HIGH',
+          JSON.stringify(ls.provenance || {}),
+          ls.description,
+        ]);
+      }
+      console.log(`[Seed] Seeded ${landslides.length} historical landslide records.`);
+    }
 
     console.log('[Seed] Database seeding completed.');
   } finally {
