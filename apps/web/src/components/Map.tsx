@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { SEVERITY_THEME, ROUTE_THEME } from '../config/map-theme';
+import { SEVERITY_THEME, ROUTE_THEME, RISK_LEVEL_THEME, HAZARD_ZONE_THEME } from '../config/map-theme';
 import type {
   IncidentFeatureCollection,
   VehicleFeatureCollection,
   RouteResponse,
+  RouteRiskSummary,
+  HazardZoneFeatureCollection,
 } from '../types/api';
 
 const API_BASE_URL = 'http://localhost:3000/api';
@@ -56,16 +58,22 @@ export default function Map() {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const incidentsRef = useRef<IncidentFeatureCollection>({ type: 'FeatureCollection', features: [] });
   const vehiclesRef = useRef<VehicleFeatureCollection>({ type: 'FeatureCollection', features: [] });
+  const hazardZonesRef = useRef<HazardZoneFeatureCollection>({ type: 'FeatureCollection', features: [] });
 
   const [incidentCount, setIncidentCount] = useState<number>(0);
   const [vehicleCount, setVehicleCount] = useState<number>(0);
+  const [hazardZoneCount, setHazardZoneCount] = useState<number>(0);
   const [isLive, setIsLive] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<string>('Never');
 
-  // Routing State
+  // Layer Toggles
+  const [showHazardZones, setShowHazardZones] = useState<boolean>(true);
+
+  // Routing & Risk State
   const [originInput, setOriginInput] = useState<string>('26.1445, 91.7362');
   const [destInput, setDestInput] = useState<string>('25.5788, 91.8933');
   const [calculatedRoute, setCalculatedRoute] = useState<RouteResponse | null>(null);
+  const [routeRisk, setRouteRisk] = useState<RouteRiskSummary | null>(null);
   const [isRouting, setIsRouting] = useState<boolean>(false);
   const [routingError, setRoutingError] = useState<string | null>(null);
 
@@ -87,7 +95,7 @@ export default function Map() {
     const setupLayers = () => {
       if (!map.isStyleLoaded()) return;
 
-      // 1. Route Geometry Layer (placed underneath markers)
+      // 1. Route Geometry Layer
       if (!map.getSource('route-source')) {
         map.addSource('route-source', {
           type: 'geojson',
@@ -98,7 +106,6 @@ export default function Map() {
           },
         });
 
-        // Route casing (outline)
         map.addLayer({
           id: 'route-line-casing',
           type: 'line',
@@ -111,7 +118,6 @@ export default function Map() {
           },
         });
 
-        // Route main line
         map.addLayer({
           id: 'route-line',
           type: 'line',
@@ -125,7 +131,61 @@ export default function Map() {
         });
       }
 
-      // 2. Incidents Layer
+      // 2. Historical Hazard Zones Layer
+      if (!map.getSource('hazard-zones-source')) {
+        map.addSource('hazard-zones-source', {
+          type: 'geojson',
+          data: hazardZonesRef.current,
+        });
+
+        map.addLayer({
+          id: 'hazard-zones-circles',
+          type: 'circle',
+          source: 'hazard-zones-source',
+          paint: {
+            'circle-radius': HAZARD_ZONE_THEME.radius,
+            'circle-color': HAZARD_ZONE_THEME.color,
+            'circle-stroke-width': HAZARD_ZONE_THEME.strokeWidth,
+            'circle-stroke-color': HAZARD_ZONE_THEME.strokeColor,
+            'circle-opacity': 0.85,
+          },
+        });
+
+        map.on('click', 'hazard-zones-circles', (e) => {
+          if (!e.features || e.features.length === 0) return;
+          const f = e.features[0];
+          const props = f.properties;
+          const geom = f.geometry as { type: string; coordinates: [number, number] };
+          const coordinates = geom.coordinates.slice() as [number, number];
+
+          new maplibregl.Popup({ offset: 12 })
+            .setLngLat(coordinates)
+            .setHTML(`
+              <div style="font-family: sans-serif; font-size: 13px; min-width: 210px; padding: 4px;">
+                <div style="font-size: 11px; font-weight: 700; color: #8B5CF6; margin-bottom: 2px;">
+                  ⛰️ HISTORICAL HAZARD ZONE
+                </div>
+                <div style="font-size: 13px; font-weight: 600; color: #111827; margin-bottom: 4px;">
+                  ${props.name}
+                </div>
+                <div style="font-size: 12px; color: #374151; margin-bottom: 4px;">
+                  ${props.description || 'Verified historical slope displacement'}
+                </div>
+                <div style="font-size: 11px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 4px;">
+                  State: <strong>${props.state}</strong> | Severity: <strong>${props.severity}</strong><br/>
+                  Trigger: <strong>${props.triggerType || 'Rainfall'}</strong><br/>
+                  Source: <span style="font-size: 10px; color: #9CA3AF;">${props.provenanceSource || 'Verified Catalog'}</span>
+                </div>
+              </div>
+            `)
+            .addTo(map);
+        });
+
+        map.on('mouseenter', 'hazard-zones-circles', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'hazard-zones-circles', () => { map.getCanvas().style.cursor = ''; });
+      }
+
+      // 3. Active Incidents Layer
       if (!map.getSource('incidents-source')) {
         map.addSource('incidents-source', {
           type: 'geojson',
@@ -190,7 +250,7 @@ export default function Map() {
         map.on('mouseleave', 'incidents-circles', () => { map.getCanvas().style.cursor = ''; });
       }
 
-      // 3. Vehicles Layer
+      // 4. Vehicles Layer
       if (!map.getSource('vehicles-source')) {
         map.addSource('vehicles-source', {
           type: 'geojson',
@@ -243,6 +303,25 @@ export default function Map() {
 
     map.on('load', setupLayers);
 
+    // Initial Fetch for Hazard Zones
+    const fetchHazardZones = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/risk/zones`);
+        if (res.ok) {
+          const data = (await res.json()) as HazardZoneFeatureCollection;
+          hazardZonesRef.current = data;
+          setHazardZoneCount(data.features.length);
+          if (map.isStyleLoaded()) {
+            const src = map.getSource('hazard-zones-source') as maplibregl.GeoJSONSource;
+            if (src) src.setData(data);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load hazard zones:', err);
+      }
+    };
+    fetchHazardZones();
+
     // Polling Loop for Incidents & Vehicles
     const fetchData = async () => {
       try {
@@ -287,12 +366,26 @@ export default function Map() {
     };
   }, []);
 
-  // Handle Route Calculation
+  // Handle Hazard Zones Layer Visibility Toggle
+  useEffect(() => {
+    if (!mapRef.current || !mapRef.current.isStyleLoaded()) return;
+    const layer = mapRef.current.getLayer('hazard-zones-circles');
+    if (layer) {
+      mapRef.current.setLayoutProperty(
+        'hazard-zones-circles',
+        'visibility',
+        showHazardZones ? 'visible' : 'none'
+      );
+    }
+  }, [showHazardZones]);
+
+  // Handle Route Calculation and Corridor Risk Assessment
   const handleCalculateRoute = async (customOrigin?: string, customDest?: string) => {
     const origStr = customOrigin || originInput;
     const destStr = customDest || destInput;
     setRoutingError(null);
     setIsRouting(true);
+    setRouteRisk(null);
 
     const origParts = origStr.split(',').map((s) => parseFloat(s.trim()));
     const destParts = destStr.split(',').map((s) => parseFloat(s.trim()));
@@ -314,6 +407,7 @@ export default function Map() {
     const [destinationLat, destinationLon] = destParts;
 
     try {
+      // 1. Calculate Road Geometry via Routing API
       const url = `${API_BASE_URL}/routes?originLat=${originLat}&originLon=${originLon}&destinationLat=${destinationLat}&destinationLon=${destinationLon}`;
       const res = await fetch(url);
       const json = await res.json();
@@ -347,6 +441,21 @@ export default function Map() {
           );
           map.fitBounds(bounds, { padding: 60, duration: 1000 });
         }
+      }
+
+      // 2. Evaluate Corridor Risk Profile via Risk Engine API
+      try {
+        const riskRes = await fetch(`${API_BASE_URL}/risk/route`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coordinates: routeData.geometry.coordinates }),
+        });
+        if (riskRes.ok) {
+          const riskJson = await riskRes.json();
+          setRouteRisk(riskJson.data as RouteRiskSummary);
+        }
+      } catch (riskErr) {
+        console.warn('Corridor risk evaluation error:', riskErr);
       }
     } catch (err) {
       setRoutingError(`Network error: ${(err as Error).message}`);
@@ -410,12 +519,16 @@ export default function Map() {
 
         <div style={{ fontSize: 12, color: '#4B5563', borderTop: '1px solid #E5E7EB', paddingTop: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-            <span>Active Logistics Fleet:</span>
+            <span>Active Fleet:</span>
             <strong style={{ color: '#059669', fontSize: 13 }}>{vehicleCount} trucks</strong>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span>Reported Road Hazards:</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+            <span>Active Road Hazards:</span>
             <strong style={{ color: '#DC2626', fontSize: 13 }}>{incidentCount} incidents</strong>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span>Historical Hazard Zones:</span>
+            <strong style={{ color: '#8B5CF6', fontSize: 13 }}>{hazardZoneCount} cataloged</strong>
           </div>
 
           <div
@@ -446,28 +559,27 @@ export default function Map() {
               <span>{cfg.label}</span>
             </div>
           ))}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: '1px dashed #E5E7EB',
-              fontSize: 11,
-            }}
-          >
-            <span
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                backgroundColor: '#10B981',
-                border: '1px solid #FFFFFF',
-                display: 'inline-block',
-              }}
-            />
-            <span>Active Logistics Vehicle</span>
+
+          {/* Layer Controls */}
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #E5E7EB' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, cursor: 'pointer', color: '#374151' }}>
+              <input
+                type="checkbox"
+                checked={showHazardZones}
+                onChange={(e) => setShowHazardZones(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  backgroundColor: '#8B5CF6',
+                  display: 'inline-block',
+                }}
+              />
+              <span>Show Hazard Zones ({hazardZoneCount})</span>
+            </label>
           </div>
 
           <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 10, textAlign: 'right' }}>
@@ -476,7 +588,7 @@ export default function Map() {
         </div>
       </div>
 
-      {/* Top-Right: Route Optimization & Navigation Panel */}
+      {/* Top-Right: Route Optimization & Risk Intelligence Panel */}
       <div
         style={{
           position: 'absolute',
@@ -488,14 +600,14 @@ export default function Map() {
           boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
           fontFamily: 'system-ui, -apple-system, sans-serif',
           zIndex: 10,
-          width: 320,
+          width: 330,
           border: '1px solid #E5E7EB',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <span style={{ fontSize: 18 }}>🧭</span>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#111827' }}>
-            Logistics Route Calculator
+            Logistics Route & Risk Calculator
           </h3>
         </div>
 
@@ -581,7 +693,7 @@ export default function Map() {
             transition: 'background-color 0.2s',
           }}
         >
-          {isRouting ? 'Calculating Optimal Route...' : 'Calculate Highway Route'}
+          {isRouting ? 'Evaluating Route & Risk...' : 'Calculate Route & Assess Risk'}
         </button>
 
         {/* Error Display */}
@@ -601,27 +713,28 @@ export default function Map() {
           </div>
         )}
 
-        {/* Route Metrics Summary */}
+        {/* Route Metrics & Risk Summary */}
         {calculatedRoute && (
           <div
             style={{
               marginTop: 10,
               padding: '10px 12px',
-              backgroundColor: '#EFF6FF',
+              backgroundColor: '#F8FAFC',
               borderRadius: 6,
-              border: '1px solid #BFDBFE',
+              border: '1px solid #E2E8F0',
             }}
           >
+            {/* Route Stats */}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontSize: 12, color: '#1E40AF', fontWeight: 500 }}>Total Highway Distance:</span>
-              <strong style={{ fontSize: 13, color: '#1E3A8A' }}>
+              <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>Highway Distance:</span>
+              <strong style={{ fontSize: 13, color: '#0F172A' }}>
                 {(calculatedRoute.distanceMeters / 1000).toFixed(1)} km
               </strong>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontSize: 12, color: '#1E40AF', fontWeight: 500 }}>Estimated Travel Duration:</span>
-              <strong style={{ fontSize: 13, color: '#1E3A8A' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>Estimated Travel Time:</span>
+              <strong style={{ fontSize: 13, color: '#0F172A' }}>
                 {Math.floor(calculatedRoute.durationSeconds / 3600) > 0
                   ? `${Math.floor(calculatedRoute.durationSeconds / 3600)}h ${Math.round(
                       (calculatedRoute.durationSeconds % 3600) / 60
@@ -630,10 +743,46 @@ export default function Map() {
               </strong>
             </div>
 
-            <div style={{ fontSize: 11, color: '#3B82F6', marginTop: 4 }}>
-              Navigation Steps: <strong>{calculatedRoute.instructions.length}</strong> | Geometry Points:{' '}
-              <strong>{calculatedRoute.geometry.coordinates.length}</strong>
-            </div>
+            {/* Risk Intelligence Banner */}
+            {routeRisk && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 10px',
+                  backgroundColor: RISK_LEVEL_THEME[routeRisk.overallLevel]?.bg || '#F3F4F6',
+                  borderRadius: 6,
+                  border: `1px solid ${RISK_LEVEL_THEME[routeRisk.overallLevel]?.color || '#9CA3AF'}`,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: RISK_LEVEL_THEME[routeRisk.overallLevel]?.text }}>
+                    CORRIDOR RISK LEVEL:
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: '#FFFFFF',
+                      backgroundColor: RISK_LEVEL_THEME[routeRisk.overallLevel]?.color,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                    }}
+                  >
+                    {routeRisk.overallLevel} ({routeRisk.meanScore}/100)
+                  </span>
+                </div>
+
+                <div style={{ fontSize: 11, color: RISK_LEVEL_THEME[routeRisk.overallLevel]?.text }}>
+                  Primary Trigger: <strong>{routeRisk.dominantTrigger}</strong>
+                </div>
+
+                {routeRisk.hazardousSegmentCount > 0 && (
+                  <div style={{ fontSize: 10, color: '#DC2626', fontWeight: 600, marginTop: 4 }}>
+                    ⚠️ {routeRisk.hazardousSegmentCount} high-risk warning segments on corridor
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
