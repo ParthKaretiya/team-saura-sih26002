@@ -16,6 +16,11 @@ import {
   evaluateRouteRisk,
   getHazardZones,
 } from '../controllers/risk.controller.js';
+import {
+  getMLPrediction,
+  postMLPrediction,
+  getMLModelInfo,
+} from '../controllers/ml.controller.js';
 
 const router = Router();
 
@@ -41,5 +46,10 @@ router.get('/routes', getRoute);
 router.get('/risk/point', getPointRisk);
 router.post('/risk/route', evaluateRouteRisk);
 router.get('/risk/zones', getHazardZones);
+
+// Machine Learning Classifiers
+router.get('/ml/predict', getMLPrediction);
+router.post('/ml/predict', postMLPrediction);
+router.get('/ml/model', getMLModelInfo);
 
 export default router;
