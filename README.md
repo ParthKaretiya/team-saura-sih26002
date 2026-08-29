@@ -1,6 +1,6 @@
 # SauraRoute
 
-[![Project Status: Planning](https://img.shields.io/badge/status-Planning%20%2F%20Foundation%20Phase-orange.svg)](#current-project-status)
+[![Project Status: Step 4 Implemented & Verified](https://img.shields.io/badge/status-Step%204%20Verified-blue.svg)](#current-project-status)
 
 * **Team Name:** Team Saura
 * **Problem Statement Reference:** SIH26002
@@ -10,9 +10,31 @@
 ---
 
 ## Current Project Status
-> [!IMPORTANT]
-> **Status: Planning / Foundation Phase**
-> This repository is currently in its initial setup phase. The project structure, configuration files, and initial architectural designs have been established. No code features, ML models, frontends, backends, or databases have been implemented yet. All designs are provisional and subject to change based on upcoming research.
+> [!NOTE]
+> **Status: Step 4 — Incidents, Vehicles, Weather, and Live Map (implemented & verified).**
+
+The project foundation is complete and the first functional increment (Step 4) is implemented and verified against the live API.
+
+| Component | Status |
+|---|---|
+| Foundation / project scaffolding | Completed |
+| Data discovery & GIS research | Completed |
+| API service (Node.js + TypeScript + Express) | Implemented — verified via HTTP |
+| PostGIS schema & migrations | Implemented — runtime unavailable on this machine |
+| Weather integration (Open-Meteo) | Implemented — verified via HTTP |
+| Incident API (create/list/status + GeoJSON) | Implemented — verified via HTTP |
+| Vehicle API + telemetry simulator | Implemented — verified via HTTP |
+| Web dashboard (React + Vite + MapLibre) | Implemented — build passing |
+| Automated tests | 13/13 passing |
+| API & web production builds | Passing |
+| In-memory fallback (when PostGIS unavailable) | Implemented — currently active |
+| OSM / GraphHopper routing | Planned (later step) |
+| ML prediction service | Planned (later step) |
+| Authentication | Planned (later step) |
+| Mobile field app | Planned (later step) |
+
+> [!WARNING]
+> PostgreSQL/PostGIS is **not running on this machine** (Docker/PostgreSQL unavailable), so the API currently operates on its in-memory fallback. Browser visual verification of the dashboard could not be performed in this environment.
 
 ---
 
