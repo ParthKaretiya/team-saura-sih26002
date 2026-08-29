@@ -10,6 +10,7 @@ import {
   listVehicles,
   updateVehicleLocation,
 } from '../controllers/vehicle.controller.js';
+import { getRoute } from '../controllers/route.controller.js';
 
 const router = Router();
 
@@ -27,5 +28,8 @@ router.patch('/incidents/:id/status', updateIncidentStatus);
 // Vehicles
 router.get('/vehicles', listVehicles);
 router.post('/vehicles/:id/location', updateVehicleLocation);
+
+// Routing
+router.get('/routes', getRoute);
 
 export default router;
