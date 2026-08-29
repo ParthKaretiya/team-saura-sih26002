@@ -6,6 +6,10 @@ import {
   listIncidents,
   updateIncidentStatus,
 } from '../controllers/incident.controller.js';
+import {
+  listVehicles,
+  updateVehicleLocation,
+} from '../controllers/vehicle.controller.js';
 
 const router = Router();
 
@@ -19,5 +23,9 @@ router.get('/weather', getWeather);
 router.post('/incidents', createIncident);
 router.get('/incidents', listIncidents);
 router.patch('/incidents/:id/status', updateIncidentStatus);
+
+// Vehicles
+router.get('/vehicles', listVehicles);
+router.post('/vehicles/:id/location', updateVehicleLocation);
 
 export default router;
