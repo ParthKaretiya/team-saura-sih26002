@@ -18,6 +18,7 @@ import { weatherService, WeatherServiceError } from '../services/weather.service
 import { GraphHopperClient, RoutingEngineError } from '../services/graphhopper.client.js';
 import { RoutingService } from '../services/routing.service.js';
 import { riskService, calculateHaversineDistanceKm } from '../services/risk.service.js';
+import { mlService } from '../services/ml.service.js';
 import { classifyRiskLevel } from '../config/risk.config.js';
 import { IncidentStatus } from '../types/incident.types.js';
 
@@ -550,6 +551,57 @@ async function runTests() {
       async () => riskService.evaluateRouteRisk([]),
       (err: Error) => err.message.includes('at least 2 points')
     );
+  });
+
+  console.log('\n--- 7. Machine Learning Classifiers & Inference ---');
+
+  await test('MLService loads model metadata and feature importances', () => {
+    const info = mlService.getModelInfo();
+    assert.strictEqual(info.model_name, 'SauraRoute-Landslide-RandomForest');
+    assert.strictEqual(info.algorithm, 'RandomForestClassifier');
+    assert.ok(info.dataset_statistics.total_samples >= 40);
+    assert.ok(info.feature_importances.slope_degrees > 0);
+    assert.ok(info.feature_importances.precipitation_24h_mm > 0);
+  });
+
+  await test('MLService predicts from raw feature payload', async () => {
+    const prediction = await mlService.predictFromFeatures({
+      precipitation_24h_mm: 120.0,
+      slope_degrees: 35.0,
+      distance_to_hotspot_km: 0.5,
+      active_incident_count_15km: 1,
+      elevation_m: 750.0,
+      soil_saturation_index: 0.90,
+    });
+
+    assert.strictEqual(prediction.prediction, 'LANDSLIDE_RISK');
+    assert.ok(prediction.probability >= 0.50);
+    assert.ok(['HIGH', 'CRITICAL'].includes(prediction.risk_tier));
+    assert.ok(prediction.confidence >= 0.0 && prediction.confidence <= 1.0);
+    assert.ok(prediction.modelVersion.includes('rf-step7'));
+  });
+
+  await test('MLService predicts low probability on dry flat valley terrain', async () => {
+    const pred = await mlService.predictForCoordinate(26.182, 91.751, {
+      precipitationOverrideMm: 0.0,
+      slopeOverrideDeg: 2.0,
+    });
+
+    assert.strictEqual(pred.prediction, 'NO_HAZARD');
+    assert.ok(pred.probability < 0.50);
+    assert.ok(['LOW', 'MEDIUM'].includes(pred.risk_tier));
+    assert.strictEqual(pred.location?.latitude, 26.182);
+  });
+
+  await test('MLService predicts high probability on steep storm corridor', async () => {
+    const pred = await mlService.predictForCoordinate(25.9036, 91.8794, {
+      precipitationOverrideMm: 140.0,
+      slopeOverrideDeg: 38.0,
+    });
+
+    assert.strictEqual(pred.prediction, 'LANDSLIDE_RISK');
+    assert.ok(pred.probability >= 0.50);
+    assert.ok(['HIGH', 'CRITICAL'].includes(pred.risk_tier));
   });
 
   console.log('\n==================================================');
