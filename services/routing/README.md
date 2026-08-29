@@ -24,8 +24,12 @@ Those locations are already excluded by the repository's data ignore rules.
 From the repository root, after placing the pinned JAR and PBF in `data/raw/`:
 
 ```powershell
-java -Xms4g -Xmx4g -jar data/raw/graphhopper-web-10.2.jar server services/routing/graphhopper.yml
+.\services\routing\start-graphhopper.ps1
 ```
+
+The launcher verifies Java 17, the pinned JAR, PBF, configuration, and port
+8989 before starting the engine. Use `-HeapGiB 4` (the default) to make the
+JVM memory limit explicit. It never downloads data automatically.
 
 GraphHopper listens on `http://localhost:8989`; its administrative health
 endpoint listens on `http://localhost:8990/healthcheck`.
