@@ -1,6 +1,6 @@
 /**
  * SauraRoute Automated Test Suite
- * Tests domain validations, GeoJSON structures, weather normalization, and vehicle tracking.
+ * Tests domain validations, GeoJSON structures, weather normalization, vehicle tracking, and routing pipeline.
  */
 
 import assert from 'assert';
@@ -15,6 +15,8 @@ import {
 import { incidentService } from '../services/incident.service.js';
 import { vehicleService } from '../services/vehicle.service.js';
 import { weatherService, WeatherServiceError } from '../services/weather.service.js';
+import { GraphHopperClient, RoutingEngineError } from '../services/graphhopper.client.js';
+import { RoutingService } from '../services/routing.service.js';
 import { IncidentStatus } from '../types/incident.types.js';
 
 let passed = 0;
@@ -34,7 +36,7 @@ async function test(name: string, fn: () => Promise<void> | void) {
 
 async function runTests() {
   console.log('==================================================');
-  console.log('SauraRoute Automated Verification Suite (Step 4)');
+  console.log('SauraRoute Automated Verification Suite');
   console.log('==================================================\n');
 
   console.log('--- 1. Validation Utilities ---');
@@ -203,6 +205,99 @@ async function runTests() {
       assert.ok([502, 503].includes((err as WeatherServiceError).statusCode));
       console.log(`    (Note: Network offline fallback tested: ${(err as Error).message})`);
     }
+  });
+
+  console.log('\n--- 5. Routing Service & GraphHopper Client ---');
+
+  await test('GraphHopperClient parses valid route payload and normalizes coordinates', async () => {
+    const mockFetch = async () =>
+      new Response(
+        JSON.stringify({
+          paths: [
+            {
+              distance: 98450.5,
+              time: 7200000,
+              points: {
+                type: 'LineString',
+                coordinates: [
+                  [91.7362, 26.1445],
+                  [91.7821, 25.981],
+                  [91.8933, 25.5788],
+                ],
+              },
+              instructions: [
+                { text: 'Depart on GS Road', distance: 5000, time: 300000 },
+                { text: 'Continue towards Shillong', distance: 93450.5, time: 6900000 },
+              ],
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+
+    const client = new GraphHopperClient(
+      { baseUrl: 'http://mock-gh:8989', timeoutMs: 2000, profile: 'car' },
+      mockFetch
+    );
+    const service = new RoutingService(client);
+
+    const route = await service.calculateRoute(
+      { latitude: 26.1445, longitude: 91.7362 },
+      { latitude: 25.5788, longitude: 91.8933 }
+    );
+
+    assert.strictEqual(route.distanceMeters, 98451);
+    assert.strictEqual(route.durationSeconds, 7200);
+    assert.strictEqual(route.geometry.type, 'LineString');
+    assert.strictEqual(route.geometry.coordinates.length, 3);
+    assert.deepStrictEqual(route.geometry.coordinates[0], [91.7362, 26.1445]);
+    assert.strictEqual(route.instructions.length, 2);
+    assert.strictEqual(route.instructions[0].text, 'Depart on GS Road');
+  });
+
+  await test('GraphHopperClient handles 404 unroutable coordinates with 422 ROUTE_NOT_FOUND', async () => {
+    const mockFetch = async () =>
+      new Response(JSON.stringify({ message: 'Point not found' }), { status: 404 });
+
+    const client = new GraphHopperClient(
+      { baseUrl: 'http://mock-gh:8989', timeoutMs: 2000, profile: 'car' },
+      mockFetch
+    );
+
+    await assert.rejects(
+      async () =>
+        client.findRoute(
+          { latitude: 0.0, longitude: 0.0 },
+          { latitude: 1.0, longitude: 1.0 }
+        ),
+      (err: Error) =>
+        err instanceof RoutingEngineError &&
+        err.statusCode === 422 &&
+        err.code === 'ROUTE_NOT_FOUND'
+    );
+  });
+
+  await test('GraphHopperClient handles server offline with 503 ROUTING_ENGINE_UNAVAILABLE', async () => {
+    const mockFetch = async () => {
+      throw new Error('connect ECONNREFUSED 127.0.0.1:8989');
+    };
+
+    const client = new GraphHopperClient(
+      { baseUrl: 'http://mock-gh:8989', timeoutMs: 2000, profile: 'car' },
+      mockFetch
+    );
+
+    await assert.rejects(
+      async () =>
+        client.findRoute(
+          { latitude: 26.1445, longitude: 91.7362 },
+          { latitude: 25.5788, longitude: 91.8933 }
+        ),
+      (err: Error) =>
+        err instanceof RoutingEngineError &&
+        err.statusCode === 503 &&
+        err.code === 'ROUTING_ENGINE_UNAVAILABLE'
+    );
   });
 
   console.log('\n==================================================');
