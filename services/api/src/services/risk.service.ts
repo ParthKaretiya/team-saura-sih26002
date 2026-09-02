@@ -46,6 +46,23 @@ function loadHistoricalLandslides(): HistoricalLandslideRecord[] {
 
 const IN_MEMORY_LANDSLIDES = loadHistoricalLandslides();
 
+type RiskIncident = {
+  latitude: number;
+  longitude: number;
+  severity: string;
+  status: string;
+};
+
+/**
+ * Request-scoped data shared by one or more route-risk evaluations.
+ * It preserves the established scoring rules while avoiding repeated incident
+ * lookups and duplicate weather requests for shared route coordinates.
+ */
+export interface RouteRiskEvaluationContext {
+  incidents: RiskIncident[];
+  precipitationByCoordinate: Map<string, number>;
+}
+
 /**
  * Calculates Great Circle (Haversine) distance in kilometers between two lat/lon points.
  */
@@ -98,6 +115,28 @@ export function estimateTerrainSlopeDegrees(latitude: number, longitude: number)
 }
 
 export class RiskService {
+  async createRouteRiskEvaluationContext(): Promise<RouteRiskEvaluationContext> {
+    let incidents: RiskIncident[] = [];
+
+    try {
+      const incGeoJson = await incidentService.listIncidents();
+      incidents = incGeoJson.features.map((feature) => ({
+        longitude: feature.geometry.coordinates[0],
+        latitude: feature.geometry.coordinates[1],
+        severity: feature.properties.severity,
+        status: feature.properties.status,
+      }));
+    } catch {
+      // Preserve the existing unavailable-incident fallback for this request.
+      incidents = [];
+    }
+
+    return {
+      incidents,
+      precipitationByCoordinate: new Map<string, number>(),
+    };
+  }
+
   /**
    * Calculates explainable rainfall subscore [0, 100].
    */
@@ -225,20 +264,33 @@ export class RiskService {
   /**
    * Evaluates composite multi-factor risk at a single geographic coordinate.
    */
-  async evaluatePointRisk(latitude: number, longitude: number, options?: { precipitationOverrideMm?: number; slopeOverrideDeg?: number }): Promise<PointRiskAssessment> {
+  async evaluatePointRisk(
+    latitude: number,
+    longitude: number,
+    options?: { precipitationOverrideMm?: number; slopeOverrideDeg?: number },
+    context?: RouteRiskEvaluationContext,
+  ): Promise<PointRiskAssessment> {
     // 1. Weather Factor
     let precipitationMm = options?.precipitationOverrideMm ?? 0.0;
     if (options?.precipitationOverrideMm === undefined) {
-      try {
-        const weather = await weatherService.getWeatherForCoordinate(latitude, longitude);
-        precipitationMm = weather.current.precipitation;
-        if (Array.isArray(weather.forecast) && weather.forecast.length > 0) {
-          const forecastSum = weather.forecast.slice(0, 12).reduce((sum, h) => sum + (h.precipitation || 0), 0);
-          precipitationMm = Math.max(precipitationMm, forecastSum);
+      const coordinateKey = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
+      const cachedPrecipitation = context?.precipitationByCoordinate.get(coordinateKey);
+
+      if (cachedPrecipitation !== undefined) {
+        precipitationMm = cachedPrecipitation;
+      } else {
+        try {
+          const weather = await weatherService.getWeatherForCoordinate(latitude, longitude);
+          precipitationMm = weather.current.precipitation;
+          if (Array.isArray(weather.forecast) && weather.forecast.length > 0) {
+            const forecastSum = weather.forecast.slice(0, 12).reduce((sum, h) => sum + (h.precipitation || 0), 0);
+            precipitationMm = Math.max(precipitationMm, forecastSum);
+          }
+        } catch {
+          // Fallback to baseline
+          precipitationMm = 0.0;
         }
-      } catch {
-        // Fallback to baseline
-        precipitationMm = 0.0;
+        context?.precipitationByCoordinate.set(coordinateKey, precipitationMm);
       }
     }
     const rainResult = this.calculateRainfallSubscore(precipitationMm);
@@ -248,17 +300,19 @@ export class RiskService {
     const slopeResult = this.calculateSlopeSubscore(slopeDeg);
 
     // 3. Active Incident Proximity Factor
-    let incidentsList: Array<{ latitude: number; longitude: number; severity: string; status: string }> = [];
-    try {
-      const incGeoJson = await incidentService.listIncidents();
-      incidentsList = incGeoJson.features.map(f => ({
-        longitude: f.geometry.coordinates[0],
-        latitude: f.geometry.coordinates[1],
-        severity: f.properties.severity,
-        status: f.properties.status,
-      }));
-    } catch {
-      incidentsList = [];
+    let incidentsList: RiskIncident[] = context?.incidents ?? [];
+    if (!context) {
+      try {
+        const incGeoJson = await incidentService.listIncidents();
+        incidentsList = incGeoJson.features.map(f => ({
+          longitude: f.geometry.coordinates[0],
+          latitude: f.geometry.coordinates[1],
+          severity: f.properties.severity,
+          status: f.properties.status,
+        }));
+      } catch {
+        incidentsList = [];
+      }
     }
     const incidentResult = this.calculateIncidentSubscore(latitude, longitude, incidentsList);
 
@@ -328,7 +382,10 @@ export class RiskService {
   /**
    * Samples a highway LineString every ~5km and aggregates corridor risk profile.
    */
-  async evaluateRouteRisk(coordinates: Array<[longitude: number, latitude: number]>): Promise<RouteRiskSummary> {
+  async evaluateRouteRisk(
+    coordinates: Array<[longitude: number, latitude: number]>,
+    context?: RouteRiskEvaluationContext,
+  ): Promise<RouteRiskSummary> {
     if (!Array.isArray(coordinates) || coordinates.length < 2) {
       throw new Error('Route coordinates must contain at least 2 points.');
     }
@@ -367,7 +424,7 @@ export class RiskService {
 
     for (const p of sampledPoints) {
       const [lon, lat] = p.coord;
-      const pointRisk = await this.evaluatePointRisk(lat, lon);
+      const pointRisk = await this.evaluatePointRisk(lat, lon, undefined, context);
 
       totalScore += pointRisk.score;
       if (pointRisk.score > maxScore) maxScore = pointRisk.score;

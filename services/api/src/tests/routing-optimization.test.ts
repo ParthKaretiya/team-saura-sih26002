@@ -5,7 +5,10 @@
  * behaviour before the implementation is added in subsequent commits.
  */
 import assert from 'assert';
-import { routingService } from '../services/routing.service.js';
+import { GraphHopperClient } from '../services/graphhopper.client.js';
+import { RoutingService, routingService } from '../services/routing.service.js';
+import { mlService } from '../services/ml.service.js';
+import { riskService } from '../services/risk.service.js';
 import type {
   CandidateRouteProfile,
   RerouteEvaluationResult,
@@ -105,6 +108,97 @@ async function runTests(): Promise<void> {
     distanceMeters: 115_000,
     durationSeconds: 8_100,
     risk: { ...makeCandidate().risk, meanScore: 20, maxScore: 30, hazardousSegmentCount: 0 },
+  });
+
+  await test('profiles every GraphHopper candidate with shared route-risk context and coordinate-level ML advice', async () => {
+    const mockFetch = async () => new Response(JSON.stringify({
+      paths: [
+        {
+          distance: 100_000,
+          time: 7_200_000,
+          points: { type: 'LineString', coordinates: [[91.7, 26.1], [91.8, 26.0]] },
+        },
+        {
+          distance: 110_000,
+          time: 7_900_000,
+          points: { type: 'LineString', coordinates: [[91.7, 26.1], [91.9, 25.9]] },
+        },
+      ],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const service = new RoutingService(new GraphHopperClient(
+      { baseUrl: 'http://mock-gh:8989', timeoutMs: 2_000, profile: 'car' },
+      mockFetch,
+    ));
+    const originalCreateContext = riskService.createRouteRiskEvaluationContext;
+    const originalEvaluateRouteRisk = riskService.evaluateRouteRisk;
+    const originalPredictForCoordinate = mlService.predictForCoordinate;
+    const sharedContext = { incidents: [], precipitationByCoordinate: new Map<string, number>() };
+    let contextCalls = 0;
+    const observedContexts: unknown[] = [];
+    const mlCoordinates: Array<[number, number]> = [];
+
+    riskService.createRouteRiskEvaluationContext = async () => {
+      contextCalls++;
+      return sharedContext;
+    };
+    riskService.evaluateRouteRisk = async (_coordinates, context) => {
+      observedContexts.push(context);
+      return {
+        overallLevel: 'HIGH',
+        meanScore: 52,
+        maxScore: 70,
+        hazardousSegmentCount: 1,
+        dominantTrigger: 'Rainfall',
+        sampledWaypointsCount: 2,
+        waypoints: [
+          { coordinates: [91.7, 26.1], distanceAlongRouteKm: 0, score: 20, level: 'LOW', primaryFactor: 'Slope' },
+          { coordinates: [91.8, 26.0], distanceAlongRouteKm: 10, score: 70, level: 'HIGH', primaryFactor: 'Rainfall' },
+        ],
+      };
+    };
+    mlService.predictForCoordinate = async (latitude, longitude) => {
+      mlCoordinates.push([latitude, longitude]);
+      return {
+        prediction: 'LANDSLIDE_RISK',
+        probability: 0.7,
+        risk_tier: 'HIGH',
+        confidence: 0.4,
+        modelVersion: 'test-model',
+        location: { latitude, longitude },
+        features: {
+          precipitation_24h_mm: 60,
+          slope_degrees: 30,
+          distance_to_hotspot_km: 2,
+          active_incident_count_15km: 0,
+          elevation_m: 750,
+          soil_saturation_index: 0.7,
+        },
+        featureImportance: {},
+      };
+    };
+
+    try {
+      const profiles = await service.profileCandidateRoutes(
+        { latitude: 26.1, longitude: 91.7 },
+        { latitude: 25.9, longitude: 91.9 },
+      );
+
+      assert.strictEqual(profiles.length, 2);
+      assert.strictEqual(profiles[0].candidateId, 'candidate_1');
+      assert.strictEqual(profiles[0].isBaseline, true);
+      assert.strictEqual(profiles[1].candidateId, 'candidate_2');
+      assert.strictEqual(profiles[1].risk.meanScore, 52);
+      assert.strictEqual(profiles[1].risk.hazardousSegmentCount, 1);
+      assert.strictEqual(profiles[1].risk.dominantTrigger, 'Rainfall');
+      assert.strictEqual(profiles[1].mlSummary?.maxProbability, 0.7);
+      assert.strictEqual(contextCalls, 1);
+      assert.deepStrictEqual(observedContexts, [sharedContext, sharedContext]);
+      assert.deepStrictEqual(mlCoordinates, [[26.0, 91.8], [26.0, 91.8]]);
+    } finally {
+      riskService.createRouteRiskEvaluationContext = originalCreateContext;
+      riskService.evaluateRouteRisk = originalEvaluateRouteRisk;
+      mlService.predictForCoordinate = originalPredictForCoordinate;
+    }
   });
 
   await test('profiles preserve candidate route metrics and explainable risk inputs', () => {
