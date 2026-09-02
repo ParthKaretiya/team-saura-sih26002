@@ -45,6 +45,8 @@ export interface RoutingOptions {
   maxPaths?: number;
 }
 
+export type RoutingPreference = 'FASTEST' | 'BALANCED' | 'SAFEST';
+
 export interface CandidateRouteProfile {
   candidateId: string;
   name: string;

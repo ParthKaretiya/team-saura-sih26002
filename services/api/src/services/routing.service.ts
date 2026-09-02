@@ -1,4 +1,6 @@
 import { routingConfig } from '../config/routing.js';
+import { OPTIMIZATION_CONFIG, type OptimizationWeights } from '../config/optimization.config.js';
+import { RISK_CONFIG } from '../config/risk.config.js';
 import { GraphHopperClient, RoutingEngineError } from './graphhopper.client.js';
 import { riskService, type RouteRiskEvaluationContext } from './risk.service.js';
 import { mlService } from './ml.service.js';
@@ -8,6 +10,8 @@ import type {
   RouteNavigationInstruction,
   RoutingOptions,
   CandidateRouteProfile,
+  RouteOptimizationResult,
+  RoutingPreference,
 } from '../types/routing.types.js';
 
 export { RoutingEngineError };
@@ -154,6 +158,252 @@ export class RoutingService {
     }
 
     return profiles;
+  }
+
+  /**
+   * Selects a candidate using normalized travel cost and the existing Step 6
+   * route-risk aggregate. ML remains advisory and does not affect selection.
+   */
+  optimizeCandidateProfiles(
+    candidates: CandidateRouteProfile[],
+    preference: RoutingPreference,
+  ): RouteOptimizationResult {
+    if (candidates.length === 0) {
+      throw new Error('At least one candidate route is required for optimization.');
+    }
+
+    const baseline = candidates.find((candidate) => candidate.isBaseline)
+      ?? this.sortByTravelCost(candidates)[0];
+    const baselineHasRisk = this.hasUsableRisk(baseline);
+    const weights = this.getWeights(preference);
+    const scoredCandidates = candidates.map((candidate) => this.withNormalizedCost(candidate, baseline, weights));
+    const scoredBaseline = scoredCandidates.find((candidate) => candidate.candidateId === baseline.candidateId)!;
+
+    if (!baselineHasRisk) {
+      return this.buildOptimizationResult(
+        scoredBaseline,
+        scoredBaseline,
+        scoredCandidates,
+        'SPEED_BASELINE',
+        'Fastest baseline selected because safety intelligence is unavailable.',
+      );
+    }
+
+    if (preference === 'FASTEST') {
+      const selected = this.sortByTravelCost(scoredCandidates)[0];
+      const reason = candidates.length === 1
+        ? 'Fastest baseline selected because GraphHopper returned only one candidate route.'
+        : selected.candidateId === scoredBaseline.candidateId
+          ? 'Fastest route selected because it has the shortest estimated duration.'
+          : 'Fastest route selected because it has the shortest estimated duration among the returned candidates.';
+
+      return this.buildOptimizationResult(
+        selected,
+        scoredBaseline,
+        scoredCandidates,
+        'SPEED_BASELINE',
+        reason,
+      );
+    }
+
+    if (candidates.length === 1) {
+      return this.buildOptimizationResult(
+        scoredBaseline,
+        scoredBaseline,
+        scoredCandidates,
+        'SPEED_BASELINE',
+        'Fastest baseline selected because GraphHopper returned only one candidate route.',
+      );
+    }
+
+    const detourEligible = scoredCandidates.filter((candidate) => this.isWithinDetourLimit(candidate, scoredBaseline));
+    const riskEligible = detourEligible.filter((candidate) => this.hasUsableRisk(candidate));
+    const nonCriticalCandidates = riskEligible.filter((candidate) => !this.hasCriticalActiveIncident(candidate));
+    const eligible = nonCriticalCandidates.length > 0 ? nonCriticalCandidates : riskEligible;
+    const allEligibleAreCritical = eligible.length > 0 && nonCriticalCandidates.length === 0;
+
+    if (eligible.length === 0) {
+      return this.buildOptimizationResult(
+        scoredBaseline,
+        scoredBaseline,
+        scoredCandidates,
+        'SPEED_BASELINE',
+        'Fastest baseline selected because no alternative remained within the configured detour limit with usable safety intelligence.',
+      );
+    }
+
+    if (preference === 'SAFEST') {
+      if (this.hazardExposure(scoredBaseline) < OPTIMIZATION_CONFIG.constraints.highRiskThresholdScore) {
+        return this.buildOptimizationResult(
+          scoredBaseline,
+          scoredBaseline,
+          scoredCandidates,
+          'SPEED_BASELINE',
+          'Fastest baseline selected because its hazard exposure does not meet the configured detour-evaluation threshold.',
+        );
+      }
+
+      const materiallySafer = eligible.filter((candidate) =>
+        candidate.candidateId === scoredBaseline.candidateId
+        || this.riskReductionRatio(scoredBaseline, candidate) >= OPTIMIZATION_CONFIG.constraints.minRiskReductionRatio,
+      );
+      const selected = this.sortByOptimizationCost(materiallySafer.length > 0 ? materiallySafer : [scoredBaseline])[0];
+
+      if (selected.candidateId === scoredBaseline.candidateId) {
+        return this.buildOptimizationResult(
+          selected,
+          scoredBaseline,
+          scoredCandidates,
+          'SPEED_BASELINE',
+          allEligibleAreCritical
+            ? 'Fastest baseline selected because every detour-eligible candidate has a critical active-incident hazard.'
+            : 'Fastest route selected because alternatives did not provide sufficient risk reduction within the allowed detour.',
+        );
+      }
+
+      return this.buildOptimizationResult(
+        selected,
+        scoredBaseline,
+        scoredCandidates,
+        'SAFETY_OPTIMIZED',
+        'Safer route selected because it materially reduced hazard exposure while remaining within the allowed detour.',
+      );
+    }
+
+    const selected = this.sortByOptimizationCost(eligible)[0];
+    if (selected.candidateId === scoredBaseline.candidateId) {
+      return this.buildOptimizationResult(
+        selected,
+        scoredBaseline,
+        scoredCandidates,
+        'SPEED_BASELINE',
+        allEligibleAreCritical
+          ? 'Fastest baseline selected because every detour-eligible candidate has a critical active-incident hazard.'
+          : 'Fastest route selected because alternatives did not provide a better configured time-risk tradeoff within the allowed detour.',
+      );
+    }
+
+    return this.buildOptimizationResult(
+      selected,
+      scoredBaseline,
+      scoredCandidates,
+      'SAFETY_OPTIMIZED',
+      'Balanced route selected because it provided the best configured time-risk tradeoff within the allowed detour.',
+    );
+  }
+
+  private getWeights(preference: RoutingPreference): OptimizationWeights {
+    if (preference === 'FASTEST') return OPTIMIZATION_CONFIG.speedOnlyWeights;
+    if (preference === 'SAFEST') return OPTIMIZATION_CONFIG.safetyFirstWeights;
+    return OPTIMIZATION_CONFIG.defaultWeights;
+  }
+
+  private withNormalizedCost(
+    candidate: CandidateRouteProfile,
+    baseline: CandidateRouteProfile,
+    weights: OptimizationWeights,
+  ): CandidateRouteProfile {
+    if (!this.hasUsableRisk(candidate) || !this.hasUsableRisk(baseline)) {
+      return candidate;
+    }
+
+    const durationScore = candidate.durationSeconds / baseline.durationSeconds;
+    const distanceScore = candidate.distanceMeters / baseline.distanceMeters;
+    const hazardScore = this.hazardExposure(candidate) / 100;
+    const totalCost = weights.duration * durationScore
+      + weights.distance * distanceScore
+      + weights.hazard * hazardScore;
+
+    return {
+      ...candidate,
+      compositeCost: Math.round(totalCost * 10_000) / 10_000,
+      normalizedCost: {
+        durationScore: Math.round(durationScore * 10_000) / 10_000,
+        distanceScore: Math.round(distanceScore * 10_000) / 10_000,
+        hazardScore: Math.round(hazardScore * 10_000) / 10_000,
+        totalCost: Math.round(totalCost * 10_000) / 10_000,
+      },
+    };
+  }
+
+  private hasUsableRisk(candidate: CandidateRouteProfile): boolean {
+    return Number.isFinite(candidate.risk.meanScore)
+      && Number.isFinite(candidate.risk.maxScore)
+      && Number.isFinite(candidate.risk.hazardousSegmentCount);
+  }
+
+  private hazardExposure(candidate: CandidateRouteProfile): number {
+    // Matches the existing route-level risk classification aggregate.
+    return candidate.risk.maxScore * 0.6 + candidate.risk.meanScore * 0.4;
+  }
+
+  private isWithinDetourLimit(candidate: CandidateRouteProfile, baseline: CandidateRouteProfile): boolean {
+    return candidate.durationSeconds / baseline.durationSeconds <= OPTIMIZATION_CONFIG.constraints.maxDetourRatio
+      && candidate.distanceMeters / baseline.distanceMeters <= OPTIMIZATION_CONFIG.constraints.maxDetourRatio;
+  }
+
+  private hasCriticalActiveIncident(candidate: CandidateRouteProfile): boolean {
+    return candidate.risk.dominantTrigger === 'Active Incident'
+      && candidate.risk.maxScore >= RISK_CONFIG.boundaries.criticalMin;
+  }
+
+  private riskReductionRatio(baseline: CandidateRouteProfile, candidate: CandidateRouteProfile): number {
+    const baselineExposure = this.hazardExposure(baseline);
+    if (baselineExposure <= 0) return 0;
+    return (baselineExposure - this.hazardExposure(candidate)) / baselineExposure;
+  }
+
+  private sortByTravelCost(candidates: CandidateRouteProfile[]): CandidateRouteProfile[] {
+    return [...candidates].sort((left, right) =>
+      left.durationSeconds - right.durationSeconds
+      || left.distanceMeters - right.distanceMeters
+      || left.candidateId.localeCompare(right.candidateId),
+    );
+  }
+
+  private sortByOptimizationCost(candidates: CandidateRouteProfile[]): CandidateRouteProfile[] {
+    const epsilon = 0.0001;
+    return [...candidates].sort((left, right) => {
+      const costDifference = left.normalizedCost.totalCost - right.normalizedCost.totalCost;
+      if (Math.abs(costDifference) > epsilon) return costDifference;
+
+      return this.hazardExposure(left) - this.hazardExposure(right)
+        || Number(right.isBaseline) - Number(left.isBaseline)
+        || left.durationSeconds - right.durationSeconds
+        || left.distanceMeters - right.distanceMeters
+        || left.candidateId.localeCompare(right.candidateId);
+    });
+  }
+
+  private buildOptimizationResult(
+    selectedRoute: CandidateRouteProfile,
+    baselineRoute: CandidateRouteProfile,
+    candidates: CandidateRouteProfile[],
+    strategy: RouteOptimizationResult['optimization']['strategy'],
+    selectionReason: string,
+  ): RouteOptimizationResult {
+    const [originLongitude, originLatitude] = baselineRoute.geometry.coordinates[0];
+    const [destinationLongitude, destinationLatitude] = baselineRoute.geometry.coordinates.at(-1)!;
+    const riskReduction = this.hasUsableRisk(selectedRoute) && this.hasUsableRisk(baselineRoute)
+      ? Math.max(0, this.riskReductionRatio(baselineRoute, selectedRoute) * 100)
+      : 0;
+
+    return {
+      origin: { latitude: originLatitude, longitude: originLongitude },
+      destination: { latitude: destinationLatitude, longitude: destinationLongitude },
+      selectedCandidateId: selectedRoute.candidateId,
+      selectedRoute,
+      baselineRoute,
+      candidatesCount: candidates.length,
+      candidates,
+      optimization: {
+        strategy,
+        selectionReason,
+        hazardReductionPercent: Math.round(riskReduction * 10) / 10,
+        additionalDistanceKm: Math.max(0, Math.round((selectedRoute.distanceMeters - baselineRoute.distanceMeters) / 100) / 10),
+        additionalDurationMinutes: Math.max(0, Math.round((selectedRoute.durationSeconds - baselineRoute.durationSeconds) / 6) / 10),
+      },
+    };
   }
 }
 

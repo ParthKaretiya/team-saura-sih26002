@@ -12,10 +12,9 @@ import { riskService } from '../services/risk.service.js';
 import type {
   CandidateRouteProfile,
   RerouteEvaluationResult,
+  RoutingPreference,
   RouteOptimizationResult,
 } from '../types/routing.types.js';
-
-type RoutingPreference = 'FASTEST' | 'BALANCED' | 'SAFEST';
 
 type OptimizationServiceContract = {
   optimizeCandidateProfiles: (
