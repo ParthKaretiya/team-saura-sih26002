@@ -10,6 +10,7 @@ import type {
   RouteNavigationInstruction,
   RoutingOptions,
   CandidateRouteProfile,
+  RerouteEvaluationResult,
   RouteOptimizationResult,
   RoutingPreference,
 } from '../types/routing.types.js';
@@ -160,6 +161,105 @@ export class RoutingService {
     return profiles;
   }
 
+  async optimizeRoute(
+    origin: Coordinate,
+    destination: Coordinate,
+    preference: RoutingPreference = 'BALANCED',
+    options?: RoutingOptions,
+  ): Promise<RouteOptimizationResult> {
+    const candidates = await this.profileCandidateRoutes(origin, destination, options);
+    return this.optimizeCandidateProfiles(candidates, preference);
+  }
+
+  /**
+   * Re-evaluates an explicitly supplied current route against freshly acquired
+   * candidates. It uses only the application risk inputs already available to
+   * SauraRoute; it does not assume live GPS tracking or external hazard feeds.
+   */
+  async evaluateRerouteForRoute(
+    currentRoute: RouteResponse,
+    origin: Coordinate,
+    destination: Coordinate,
+    options?: RoutingOptions,
+  ): Promise<RerouteEvaluationResult> {
+    const riskContext = await riskService.createRouteRiskEvaluationContext();
+    const currentProfile = await this.profileCandidateRoute(currentRoute, 0, true, riskContext);
+    const candidateRoutes = await this.calculateCandidateRoutes(origin, destination, options);
+    const candidates = await Promise.all(candidateRoutes.map((route, index) =>
+      this.profileCandidateRoute(route, index, index === 0, riskContext),
+    ));
+
+    return this.evaluateReroute(currentProfile, candidates);
+  }
+
+  evaluateReroute(
+    currentRoute: CandidateRouteProfile,
+    candidates: CandidateRouteProfile[],
+  ): RerouteEvaluationResult {
+    const safetyIntelligence = this.safetyIntelligenceFor([currentRoute, ...candidates]);
+    const currentRouteSummary = {
+      riskLevel: currentRoute.risk.overallLevel,
+      meanRiskScore: currentRoute.risk.meanScore,
+      maxRiskScore: currentRoute.risk.maxScore,
+      hazardousSegmentCount: currentRoute.risk.hazardousSegmentCount,
+    };
+
+    if (!this.hasUsableRisk(currentRoute) || safetyIntelligence.status === 'DEGRADED') {
+      return {
+        rerouteRecommended: false,
+        reason: 'Rerouting is not recommended because safety intelligence is incomplete.',
+        currentRoute: currentRouteSummary,
+        evaluatedCandidatesCount: candidates.length,
+        safetyIntelligence,
+      };
+    }
+
+    const currentExposure = this.hazardExposure(currentRoute);
+    const currentHasCriticalIncident = this.hasCriticalActiveIncident(currentRoute);
+    if (!currentHasCriticalIncident && currentExposure < OPTIMIZATION_CONFIG.rerouting.triggerScore) {
+      return {
+        rerouteRecommended: false,
+        reason: 'Rerouting is not recommended because the current route remains below the configured risk threshold.',
+        currentRoute: currentRouteSummary,
+        evaluatedCandidatesCount: candidates.length,
+        safetyIntelligence,
+      };
+    }
+
+    const optimization = this.optimizeCandidateProfiles(candidates, 'SAFEST');
+    const recommendedRoute = optimization.selectedRoute;
+    const improvement = this.riskReductionRatio(currentRoute, recommendedRoute);
+    const qualifies = recommendedRoute.candidateId !== currentRoute.candidateId
+      && improvement >= OPTIMIZATION_CONFIG.rerouting.minRerouteImprovement
+      && optimization.safetyIntelligence.status === 'AVAILABLE';
+
+    if (!qualifies) {
+      return {
+        rerouteRecommended: false,
+        reason: 'Rerouting is not recommended because no candidate provides the configured safety improvement within the allowed detour.',
+        currentRoute: currentRouteSummary,
+        evaluatedCandidatesCount: candidates.length,
+        safetyIntelligence,
+      };
+    }
+
+    return {
+      rerouteRecommended: true,
+      reason: currentHasCriticalIncident
+        ? 'Rerouting is recommended because the current route has a critical active-incident hazard and a safer detour is available.'
+        : 'Rerouting is recommended because a candidate provides the configured safety improvement within the allowed detour.',
+      currentRoute: currentRouteSummary,
+      recommendedRoute,
+      metrics: {
+        hazardReductionPercent: Math.round(improvement * 1_000) / 10,
+        additionalDistanceMeters: Math.max(0, recommendedRoute.distanceMeters - currentRoute.distanceMeters),
+        additionalDurationSeconds: Math.max(0, recommendedRoute.durationSeconds - currentRoute.durationSeconds),
+      },
+      evaluatedCandidatesCount: candidates.length,
+      safetyIntelligence,
+    };
+  }
+
   /**
    * Selects a candidate using normalized travel cost and the existing Step 6
    * route-risk aggregate. ML remains advisory and does not affect selection.
@@ -186,6 +286,7 @@ export class RoutingService {
         scoredCandidates,
         'SPEED_BASELINE',
         'Fastest baseline selected because safety intelligence is unavailable.',
+        preference,
       );
     }
 
@@ -203,6 +304,7 @@ export class RoutingService {
         scoredCandidates,
         'SPEED_BASELINE',
         reason,
+        preference,
       );
     }
 
@@ -213,6 +315,7 @@ export class RoutingService {
         scoredCandidates,
         'SPEED_BASELINE',
         'Fastest baseline selected because GraphHopper returned only one candidate route.',
+        preference,
       );
     }
 
@@ -229,6 +332,7 @@ export class RoutingService {
         scoredCandidates,
         'SPEED_BASELINE',
         'Fastest baseline selected because no alternative remained within the configured detour limit with usable safety intelligence.',
+        preference,
       );
     }
 
@@ -240,6 +344,7 @@ export class RoutingService {
           scoredCandidates,
           'SPEED_BASELINE',
           'Fastest baseline selected because its hazard exposure does not meet the configured detour-evaluation threshold.',
+          preference,
         );
       }
 
@@ -258,6 +363,7 @@ export class RoutingService {
           allEligibleAreCritical
             ? 'Fastest baseline selected because every detour-eligible candidate has a critical active-incident hazard.'
             : 'Fastest route selected because alternatives did not provide sufficient risk reduction within the allowed detour.',
+          preference,
         );
       }
 
@@ -267,6 +373,7 @@ export class RoutingService {
         scoredCandidates,
         'SAFETY_OPTIMIZED',
         'Safer route selected because it materially reduced hazard exposure while remaining within the allowed detour.',
+        preference,
       );
     }
 
@@ -280,6 +387,7 @@ export class RoutingService {
         allEligibleAreCritical
           ? 'Fastest baseline selected because every detour-eligible candidate has a critical active-incident hazard.'
           : 'Fastest route selected because alternatives did not provide a better configured time-risk tradeoff within the allowed detour.',
+        preference,
       );
     }
 
@@ -289,6 +397,7 @@ export class RoutingService {
       scoredCandidates,
       'SAFETY_OPTIMIZED',
       'Balanced route selected because it provided the best configured time-risk tradeoff within the allowed detour.',
+      preference,
     );
   }
 
@@ -381,6 +490,7 @@ export class RoutingService {
     candidates: CandidateRouteProfile[],
     strategy: RouteOptimizationResult['optimization']['strategy'],
     selectionReason: string,
+    preference: RoutingPreference = 'BALANCED',
   ): RouteOptimizationResult {
     const [originLongitude, originLatitude] = baselineRoute.geometry.coordinates[0];
     const [destinationLongitude, destinationLatitude] = baselineRoute.geometry.coordinates.at(-1)!;
@@ -396,6 +506,8 @@ export class RoutingService {
       baselineRoute,
       candidatesCount: candidates.length,
       candidates,
+      preference,
+      safetyIntelligence: this.safetyIntelligenceFor(candidates),
       optimization: {
         strategy,
         selectionReason,
@@ -404,6 +516,17 @@ export class RoutingService {
         additionalDurationMinutes: Math.max(0, Math.round((selectedRoute.durationSeconds - baselineRoute.durationSeconds) / 6) / 10),
       },
     };
+  }
+
+  private safetyIntelligenceFor(candidates: CandidateRouteProfile[]): RouteOptimizationResult['safetyIntelligence'] {
+    if (candidates.some((candidate) => !this.hasUsableRisk(candidate))) {
+      return {
+        status: 'DEGRADED',
+        reason: 'One or more route risk assessments were incomplete.',
+      };
+    }
+
+    return { status: 'AVAILABLE' };
   }
 }
 

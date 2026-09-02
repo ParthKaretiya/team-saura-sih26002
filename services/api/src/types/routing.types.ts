@@ -79,6 +79,11 @@ export interface RouteOptimizationResult {
   baselineRoute: CandidateRouteProfile;
   candidatesCount: number;
   candidates: CandidateRouteProfile[];
+  preference: RoutingPreference;
+  safetyIntelligence: {
+    status: 'AVAILABLE' | 'DEGRADED';
+    reason?: string;
+  };
   optimization: {
     strategy: 'SAFETY_OPTIMIZED' | 'SPEED_BASELINE';
     selectionReason: string;
@@ -96,6 +101,10 @@ export interface RerouteEvaluationResult {
     meanRiskScore: number;
     maxRiskScore: number;
     hazardousSegmentCount: number;
+  };
+  safetyIntelligence: {
+    status: 'AVAILABLE' | 'DEGRADED';
+    reason?: string;
   };
   recommendedRoute?: CandidateRouteProfile;
   metrics?: {

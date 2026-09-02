@@ -16,11 +16,13 @@ import { incidentService } from '../services/incident.service.js';
 import { vehicleService } from '../services/vehicle.service.js';
 import { weatherService, WeatherServiceError } from '../services/weather.service.js';
 import { GraphHopperClient, RoutingEngineError } from '../services/graphhopper.client.js';
-import { RoutingService } from '../services/routing.service.js';
+import { RoutingService, routingService } from '../services/routing.service.js';
 import { riskService, calculateHaversineDistanceKm } from '../services/risk.service.js';
 import { mlService } from '../services/ml.service.js';
 import { classifyRiskLevel } from '../config/risk.config.js';
 import { IncidentStatus } from '../types/incident.types.js';
+import type { RerouteEvaluationResult, RouteOptimizationResult, RouteResponse } from '../types/routing.types.js';
+import { getRoute, optimizeRoute, rerouteRoute } from '../controllers/route.controller.js';
 
 let passed = 0;
 let failed = 0;
@@ -35,6 +37,82 @@ async function test(name: string, fn: () => Promise<void> | void) {
     console.error(`         ${(err as Error).message}`);
     failed++;
   }
+}
+
+function rethrowNext(error?: unknown): never {
+  throw error;
+}
+
+function createControllerResponse(): {
+  statusCode: number;
+  payload: unknown;
+  status: (code: number) => unknown;
+  json: (payload: unknown) => unknown;
+} {
+  const response = {
+    statusCode: 200,
+    payload: undefined as unknown,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      this.payload = payload;
+      return this;
+    },
+  };
+  return response;
+}
+
+const routeFixture: RouteResponse = {
+  origin: { latitude: 26.1, longitude: 91.7 },
+  destination: { latitude: 25.9, longitude: 91.9 },
+  distanceMeters: 100_000,
+  durationSeconds: 7_200,
+  geometry: { type: 'LineString', coordinates: [[91.7, 26.1], [91.9, 25.9]] },
+  instructions: [],
+};
+
+function optimizationFixture(preference: 'FASTEST' | 'BALANCED' | 'SAFEST' = 'BALANCED'): RouteOptimizationResult {
+  const candidate = {
+    candidateId: 'candidate_1',
+    name: 'Baseline highway route',
+    isBaseline: true,
+    distanceMeters: routeFixture.distanceMeters,
+    durationSeconds: routeFixture.durationSeconds,
+    geometry: routeFixture.geometry,
+    instructions: [],
+    risk: {
+      overallLevel: 'HIGH' as const,
+      meanScore: 60,
+      maxScore: 70,
+      hazardousSegmentCount: 1,
+      dominantTrigger: 'Rainfall',
+      sampledWaypointsCount: 2,
+      waypoints: [],
+    },
+    compositeCost: 0.8,
+    normalizedCost: { durationScore: 1, distanceScore: 1, hazardScore: 0.66, totalCost: 0.8 },
+  };
+
+  return {
+    origin: routeFixture.origin,
+    destination: routeFixture.destination,
+    selectedCandidateId: candidate.candidateId,
+    selectedRoute: candidate,
+    baselineRoute: candidate,
+    candidatesCount: 1,
+    candidates: [candidate],
+    preference,
+    safetyIntelligence: { status: 'AVAILABLE' },
+    optimization: {
+      strategy: 'SPEED_BASELINE',
+      selectionReason: 'Fastest baseline selected because GraphHopper returned only one candidate route.',
+      hazardReductionPercent: 0,
+      additionalDistanceKm: 0,
+      additionalDurationMinutes: 0,
+    },
+  };
 }
 
 async function runTests() {
@@ -300,6 +378,117 @@ async function runTests() {
         err.statusCode === 503 &&
         err.code === 'ROUTING_ENGINE_UNAVAILABLE'
     );
+  });
+
+  await test('GET /api/routes controller preserves the baseline response contract', async () => {
+    const originalCalculateRoute = routingService.calculateRoute;
+    const response = createControllerResponse();
+    try {
+      routingService.calculateRoute = async () => routeFixture;
+      await getRoute(
+        { query: { originLat: '26.1', originLon: '91.7', destinationLat: '25.9', destinationLon: '91.9' } } as any,
+        response as any,
+        rethrowNext,
+      );
+      assert.deepStrictEqual(response.payload, { status: 'success', data: routeFixture });
+    } finally {
+      routingService.calculateRoute = originalCalculateRoute;
+    }
+  });
+
+  await test('POST /api/routes/optimize propagates request mode and optimization result', async () => {
+    const originalOptimizeRoute = routingService.optimizeRoute;
+    const response = createControllerResponse();
+    let receivedPreference: unknown;
+    let receivedOptions: unknown;
+    try {
+      routingService.optimizeRoute = async (_origin, _destination, preference, options) => {
+        receivedPreference = preference;
+        receivedOptions = options;
+        return optimizationFixture(preference);
+      };
+      await optimizeRoute(
+        {
+          body: {
+            origin: routeFixture.origin,
+            destination: routeFixture.destination,
+            routingPreference: 'SAFEST',
+            routingOptions: { maxPaths: 2 },
+          },
+        } as any,
+        response as any,
+        rethrowNext,
+      );
+      assert.strictEqual(receivedPreference, 'SAFEST');
+      assert.deepStrictEqual(receivedOptions, { maxPaths: 2 });
+      assert.deepStrictEqual(response.payload, { status: 'success', data: optimizationFixture('SAFEST') });
+    } finally {
+      routingService.optimizeRoute = originalOptimizeRoute;
+    }
+  });
+
+  await test('POST /api/routes/optimize rejects invalid preferences without invoking routing', async () => {
+    const response = createControllerResponse();
+    await optimizeRoute(
+      { body: { origin: routeFixture.origin, destination: routeFixture.destination, routingPreference: 'UNSAFE' } } as any,
+      response as any,
+      rethrowNext,
+    );
+    assert.strictEqual(response.statusCode, 400);
+    assert.match((response.payload as { message: string }).message, /routingPreference/);
+  });
+
+  await test('POST /api/routes/reroute propagates a deterministic recommendation and current route', async () => {
+    const originalEvaluateReroute = routingService.evaluateRerouteForRoute;
+    const response = createControllerResponse();
+    const evaluation: RerouteEvaluationResult = {
+      rerouteRecommended: true,
+      reason: 'Rerouting is recommended because a safer detour is available.',
+      currentRoute: { riskLevel: 'HIGH', meanRiskScore: 60, maxRiskScore: 70, hazardousSegmentCount: 1 },
+      recommendedRoute: optimizationFixture('SAFEST').selectedRoute,
+      metrics: { hazardReductionPercent: 40, additionalDistanceMeters: 5_000, additionalDurationSeconds: 600 },
+      evaluatedCandidatesCount: 2,
+      safetyIntelligence: { status: 'AVAILABLE' },
+    };
+    let receivedCurrentRoute: RouteResponse | undefined;
+    try {
+      routingService.evaluateRerouteForRoute = async (currentRoute) => {
+        receivedCurrentRoute = currentRoute;
+        return evaluation;
+      };
+      await rerouteRoute(
+        { body: { origin: routeFixture.origin, destination: routeFixture.destination, currentRoute: routeFixture } } as any,
+        response as any,
+        rethrowNext,
+      );
+      assert.deepStrictEqual(receivedCurrentRoute?.geometry, routeFixture.geometry);
+      assert.deepStrictEqual(response.payload, { status: 'success', data: evaluation });
+    } finally {
+      routingService.evaluateRerouteForRoute = originalEvaluateReroute;
+    }
+  });
+
+  await test('POST /api/routes/reroute propagates no-reroute and degraded-safety evaluations', async () => {
+    const originalEvaluateReroute = routingService.evaluateRerouteForRoute;
+    const response = createControllerResponse();
+    const evaluation: RerouteEvaluationResult = {
+      rerouteRecommended: false,
+      reason: 'Rerouting is not recommended because safety intelligence is incomplete.',
+      currentRoute: { riskLevel: 'HIGH', meanRiskScore: Number.NaN, maxRiskScore: Number.NaN, hazardousSegmentCount: 0 },
+      evaluatedCandidatesCount: 1,
+      safetyIntelligence: { status: 'DEGRADED', reason: 'One or more route risk assessments were incomplete.' },
+    };
+    try {
+      routingService.evaluateRerouteForRoute = async () => evaluation;
+      await rerouteRoute(
+        { body: { origin: routeFixture.origin, destination: routeFixture.destination, currentRoute: routeFixture } } as any,
+        response as any,
+        rethrowNext,
+      );
+      assert.deepStrictEqual(response.payload, { status: 'success', data: evaluation });
+    } finally {
+      routingService.evaluateRerouteForRoute = originalEvaluateReroute;
+    }
   });
 
   console.log('\n--- 6. Risk Intelligence Engine & Multi-Factor Scoring ---');
