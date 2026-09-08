@@ -21,7 +21,8 @@ This document describes the high-level architecture and current engineering impl
 | **DEM & Slope Engine** | `services/ml` | Python DEM processor (`dem_processor.py`) calculating slope angles from elevation arrays, verified by `test_slope.py`. | **WORKING** |
 | **Terrain & Landslide ML Classifier** | `services/ml` | Supervised Random Forest model trained on 40 balanced samples (20 historical + 20 baseline controls), 5-fold CV ($100\%$ acc), and `/api/ml/*` endpoints. | **WORKING** |
 | **Automated Test Suite** | `services/api/src/tests` & `services/ml/src/` | 50 automated tests (42 backend tests + 8 Python ML unit tests) covering validation, lifecycle, routing, risk scoring, and ML classifiers. | **WORKING** |
-| **Risk-Aware Dynamic Rerouting** | `services/routing` | Dynamic hazard avoidance using GraphHopper Custom Models with real-time risk overlays. | **PLANNED** (Step 8) |
+| **Hazard-Aware Route Optimization** | `services/api` | Candidate-route optimization: profiles multiple GraphHopper candidate routes with the Step-6 risk engine and deterministically selects the safest route within a 1.35× detour cap (`POST /api/routes/optimize`). This is candidate selection, **not** GraphHopper edge-level hazard weighting. | **WORKING** (Step 8) |
+| **Dynamic Reroute Evaluation** | `services/api` | Evaluates whether the current route warrants rerouting against freshly profiled candidates and returns a deterministic recommended/not-recommended result (`POST /api/routes/reroute`). | **WORKING** (Step 8) |
 | **Mobile Field App** | `apps/mobile` | Offline-capable Leaflet mobile app for incident reporting and hazard alerts. | **PLANNED** (Step 9) |
 
 ---

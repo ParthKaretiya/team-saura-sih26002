@@ -79,23 +79,29 @@ server:
 
 ---
 
-## 4. How Routing Will Work at Runtime
+## 4. How Routing Works at Runtime (Step 8 — implemented)
+
+> [!NOTE]
+> The original spike envisioned GraphHopper Custom Model hazard weights (diagram below superseded). The actual Step-8 implementation uses candidate-route optimization as described in Section 6.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Client as Web / Mobile Client
     participant NodeAPI as Node.js API (services/api)
-    participant ML as ML Service (services/ml)
+    participant Risk as Risk Engine (Step 6)
+    participant ML as ML Service (advisory)
     participant GH as GraphHopper Engine (:8989)
 
-    Client->>NodeAPI: POST /api/routes/optimize {origin, destination, avoidRisk: true}
-    NodeAPI->>ML: GET /api/risk/active-zones (High risk segment polygons)
-    ML-->>NodeAPI: Return GeoJSON polygons with hazard multiplier
-    Note over NodeAPI: Builds GraphHopper Custom Model JSON<br/>penalizing transit inside hazard zones
-    NodeAPI->>GH: POST /route {points, profile: "cargo_truck", custom_model}
-    GH-->>NodeAPI: Return optimal path {coordinates, distance_m, time_s}
-    NodeAPI-->>Client: 200 OK with GeoJSON route & risk advisory warnings
+    Client->>NodeAPI: POST /api/routes/optimize {origin, destination, routingPreference}
+    NodeAPI->>GH: request multiple candidate routes (alternativeRoutes)
+    GH-->>NodeAPI: return candidate routes (GeoJSON LineStrings)
+    NodeAPI->>Risk: evaluateRouteRisk for each candidate
+    Risk-->>NodeAPI: per-candidate risk summary (sampled, weighted)
+    NodeAPI->>ML: optional advisory prediction per candidate
+    ML-->>NodeAPI: advisory ML summary (non-fatal)
+    Note over NodeAPI: Deterministic selection (FASTEST/BALANCED/SAFEST)<br/>respecting the 1.35x detour cap
+    NodeAPI-->>Client: baseline + selected route + optimization summary
 ```
 
 ---
@@ -163,8 +169,47 @@ curl "http://localhost:8989/route?point=26.1445,91.7362&point=25.5788,91.8933&pr
 
 ---
 
-## 6. Future Risk-Aware Extension (Next Phases)
-GraphHopper Custom Models support dynamic area penalties via the `areas` object:
+## 6. Implemented Step-8 Approach: Candidate-Route Optimization
+
+> [!NOTE]
+> Step 8 was implemented using **candidate-route optimization** (Approach B), not the edge-level Custom Model hazard weighting described below. The GraphHopper graph's edge weights are **not** modified at runtime. Instead, several alternative candidate routes are returned by GraphHopper, each is profiled with the Step-6 risk engine, and a deterministic selector chooses the safest route within the configured detour budget.
+
+Pipeline:
+
+```
+GraphHopper candidate routes
+        ↓
+Candidate normalization (GeoJSON [lon, lat])
+        ↓
+Request-scoped risk profiling (Step-6 risk engine)
+        ↓
+Optional advisory ML prediction (non-fatal)
+        ↓
+Deterministic route selection (FASTEST / BALANCED / SAFEST)
+        ↓
+POST /api/routes/optimize  →  baseline + selected route
+```
+
+* **FASTEST** selects the fastest candidate.
+* **BALANCED** combines normalized travel cost and hazard exposure.
+* **SAFEST** prioritizes a materially lower hazard while honoring the `1.35` detour cap.
+* Risk exposure uses the Step-6 aggregation: `0.6 × maxSampledRisk + 0.4 × meanSampledRisk`.
+* Critical active-incident candidates are excluded when a valid non-critical alternative exists.
+* Selection is fully deterministic; ML is advisory only and never overrides the selector.
+
+## 6.1 Dynamic Rerouting (Step 8)
+
+`POST /api/routes/reroute` re-evaluates a supplied current route against freshly acquired candidates using the same acquire → profile → compare pipeline.
+
+Recommendation criteria (from `optimization.config.ts`):
+
+* The current route is eligible when it has an active CRITICAL incident **or** its hazard exposure is ≥ `rerouting.triggerScore` (50.0).
+* A reroute is recommended only when a detour-eligible alternative has lower hazard and provides at least `rerouting.minRerouteImprovement` (0.15 → 15%) hazard reduction within the `1.35` detour cap.
+* When safety intelligence is `DEGRADED` (any risk could not be fully evaluated), rerouting is reported as **not recommended** with an honest reason, rather than guessing.
+* Rerouting is an explicitly triggered evaluation in the current UI; it is **not** a continuous polling loop.
+
+## 7. Future Risk-Aware Extension (not yet implemented)
+GraphHopper Custom Models support dynamic area penalties via the `areas` object (this is the alternative edge-weighting direction, distinct from the candidate-route approach that Step 8 actually ships):
 ```json
 {
   "priority": [
@@ -185,3 +230,16 @@ GraphHopper Custom Models support dynamic area penalties via the `areas` object:
 }
 ```
 This enables the router to naturally detour cargo vehicles around active landslide warnings or flood-submerged passes without breaking baseline routing connectivity.
+
+---
+
+## 8. Current Limitations & Honesty
+
+SauraRoute is a **decision-support prototype**, not a real-world safety certification. When presenting the platform, be explicit about the following limitations:
+
+* **Sampled, not per-edge risk.** Risk is evaluated at waypoints sampled approximately every **5 km** along each candidate corridor (max-sampled and mean). It is not assigned to every road-graph edge, so short or highly localized hazards between sample points can be missed.
+* **Candidate evaluation cost.** Profiling multiple candidates requires a risk lookup per sampled waypoint per candidate, so `maxPaths > 3` makes evaluation increasingly expensive.
+* **Snapshot semantics.** Weather and active-incident inputs are a point-in-time snapshot at evaluation; they can change immediately after a request.
+* **Sparse alternative routes.** NER corridors (e.g. Guwahati → Shillong, Shillong → Cherrapunji) may yield only one or a few GraphHopper alternative routes; the optimizer then honestly selects the baseline rather than inventing a safer detour.
+* **Advisory ML only.** The ML model uses a synthetic/demo dataset (40 balanced samples) and proxy terrain features; it is not a production-trained regional generalization, and its predictions never override the Step-6 risk engine or selector. ML failures are non-fatal.
+* **Data availability.** Public/government historical, weather, and road-incident data coverage varies across the NER, so risk scoring fidelity is uneven by corridor.

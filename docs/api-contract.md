@@ -215,3 +215,90 @@ This document outlines the REST API contracts and implementation statuses for th
 ### `GET /api/ml/model`
 * **Status:** IMPLEMENTED (WORKING)
 * **Response Structure:** Model metadata, algorithm parameters, 5-fold cross-validation accuracy, and feature importances.
+
+---
+
+## 7. Hazard-Aware Route Optimization (Step 8)
+
+Step 8 implements **candidate-route optimization** (Approach B). GraphHopper returns several alternative candidate routes for the same origin/destination; each candidate is profiled with the Step-6 risk engine, and a deterministic selector picks the safest route that stays within the configured detour budget. This is distinct from true GraphHopper edge-level hazard weighting — the graph's edge weights are not modified.
+
+### `POST /api/routes/optimize`
+* **Status:** IMPLEMENTED (WORKING)
+* **Request Structure:**
+  ```json
+  {
+    "origin": { "latitude": 26.1445, "longitude": 91.7362 },
+    "destination": { "latitude": 25.5788, "longitude": 91.8933 },
+    "routingPreference": "BALANCED",
+    "routingOptions": { "maxPaths": 3 }
+  }
+  ```
+  * `origin` / `destination`: required coordinate objects (`latitude`, `longitude`).
+  * `routingPreference`: optional, one of `FASTEST` | `BALANCED` | `SAFEST` (defaults to `BALANCED` when omitted).
+  * `routingOptions`: optional (`profile`, `alternativeRoutes`, `maxPaths`, `customModel`).
+* **Response Structure** (`RouteOptimizationResult`):
+  ```json
+  {
+    "status": "success",
+    "data": {
+      "origin": { "latitude": 26.1445, "longitude": 91.7362 },
+      "destination": { "latitude": 25.5788, "longitude": 91.8933 },
+      "selectedCandidateId": "candidate-1",
+      "selectedRoute": { "candidateId": "candidate-1", "name": "Candidate 1", "isBaseline": false, "distanceMeters": 98450, "durationSeconds": 7200, "geometry": { "type": "LineString", "coordinates": [] }, "instructions": [], "risk": { "overallLevel": "LOW", "meanScore": 20, "maxScore": 30, "hazardousSegmentCount": 0, "dominantTrigger": "None", "sampledWaypointsCount": 18 }, "compositeCost": 0.42, "normalizedCost": { "durationScore": 0.8, "distanceScore": 0.7, "hazardScore": 0.2, "totalCost": 0.42 } },
+      "baselineRoute": { "candidateId": "candidate-0", "name": "Candidate 0", "isBaseline": true, "distanceMeters": 95992, "durationSeconds": 5274, "geometry": { "type": "LineString", "coordinates": [] }, "instructions": [], "risk": { "overallLevel": "HIGH", "meanScore": 58, "maxScore": 72, "hazardousSegmentCount": 2, "dominantTrigger": "Steep Terrain", "sampledWaypointsCount": 18 }, "compositeCost": 0.8, "normalizedCost": { "durationScore": 1, "distanceScore": 1, "hazardScore": 0.66, "totalCost": 0.8 } },
+      "candidatesCount": 3,
+      "candidates": [],
+      "preference": "BALANCED",
+      "safetyIntelligence": { "status": "AVAILABLE" },
+      "optimization": {
+        "strategy": "SAFETY_OPTIMIZED",
+        "selectionReason": "Balanced route selected because it provided the best configured time-risk tradeoff within the allowed detour.",
+        "hazardReductionPercent": 32,
+        "additionalDistanceKm": 2.5,
+        "additionalDurationMinutes": 8
+      }
+    }
+  }
+  ```
+  * `candidates` is the full array of profiled `CandidateRouteProfile` objects; `selectedRoute` and `baselineRoute` are also present individually for convenience.
+  * `safetyIntelligence.status` is `DEGRADED` (with a `reason`) when any candidate's risk could not be fully evaluated; the selector then falls back to the fastest baseline honestly rather than fabricating risk.
+
+### `POST /api/routes/reroute`
+* **Status:** IMPLEMENTED (WORKING)
+* **Request Structure:**
+  ```json
+  {
+    "origin": { "latitude": 26.1445, "longitude": 91.7362 },
+    "destination": { "latitude": 25.5788, "longitude": 91.8933 },
+    "currentRoute": {
+      "origin": { "latitude": 26.1445, "longitude": 91.7362 },
+      "destination": { "latitude": 25.5788, "longitude": 91.8933 },
+      "distanceMeters": 95992,
+      "durationSeconds": 5274,
+      "geometry": { "type": "LineString", "coordinates": [] },
+      "instructions": []
+    },
+    "routingOptions": { "maxPaths": 3 }
+  }
+  ```
+  * `currentRoute` must include positive `distanceMeters` / `durationSeconds` and a `LineString` geometry with at least two coordinates.
+* **Response Structure** (`RerouteEvaluationResult`):
+  ```json
+  {
+    "status": "success",
+    "data": {
+      "rerouteRecommended": true,
+      "reason": "Rerouting is recommended because the current route has a critical active-incident hazard and a safer detour is available.",
+      "currentRoute": { "riskLevel": "HIGH", "meanRiskScore": 58, "maxRiskScore": 72, "hazardousSegmentCount": 2 },
+      "safetyIntelligence": { "status": "AVAILABLE" },
+      "recommendedRoute": { "candidateId": "candidate-1", "name": "Candidate 1", "isBaseline": false, "distanceMeters": 101000, "durationSeconds": 7600, "geometry": { "type": "LineString", "coordinates": [] }, "instructions": [], "risk": { "overallLevel": "LOW", "meanScore": 20, "maxScore": 30, "hazardousSegmentCount": 0, "dominantTrigger": "None", "sampledWaypointsCount": 18 }, "compositeCost": 0.4, "normalizedCost": { "durationScore": 0.8, "distanceScore": 0.7, "hazardScore": 0.2, "totalCost": 0.4 } },
+      "metrics": { "hazardReductionPercent": 35, "additionalDistanceMeters": 5000, "additionalDurationSeconds": 600 },
+      "evaluatedCandidatesCount": 3
+    }
+  }
+  ```
+  * When rerouting is not warranted, `rerouteRecommended` is `false`, `reason` carries the backend explanation, and `recommendedRoute`/`metrics` are omitted.
+
+### `GET /api/routes` (backward-compatible)
+* **Status:** IMPLEMENTED (WORKING — unchanged)
+* Remains the existing baseline route endpoint (see Section 5). Step 8 adds the two endpoints above without altering `GET /api/routes` response shape or behavior.

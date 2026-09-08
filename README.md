@@ -28,8 +28,8 @@ The project foundation is complete and the first functional increment (Step 4) i
 | Automated tests | 13/13 passing |
 | API & web production builds | Passing |
 | In-memory fallback (when PostGIS unavailable) | Implemented — currently active |
-| OSM / GraphHopper routing | Planned (later step) |
-| ML prediction service | Planned (later step) |
+| OSM / GraphHopper routing | Implemented — baseline + hazard-aware candidate route optimization (Step 8) |
+| ML prediction service | Implemented — advisory Random Forest classifier (Step 7) |
 | Authentication | Planned (later step) |
 | Mobile field app | Planned (later step) |
 
