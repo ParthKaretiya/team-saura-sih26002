@@ -24,8 +24,10 @@ import {
   VALID_ALERT_SEVERITIES,
 } from '../types/alert.types.js';
 import { routingService } from '../services/routing.service.js';
-import type { CandidateRouteProfile } from '../types/routing.types.js';
-import type { AccessibilityRecord } from '../types/accessibility.types.js';
+import { accessibilityService } from '../services/accessibility.service.js';
+import { ValidationError } from '../utils/validation.js';
+import type { CandidateRouteProfile, RouteGeometry } from '../types/routing.types.js';
+import type { AccessibilityRecord, AccessibilityStatus } from '../types/accessibility.types.js';
 
 let passed = 0;
 let failed = 0;
@@ -189,7 +191,223 @@ async function runTests(): Promise<void> {
     assert.notStrictEqual(VALID_ALERT_CATEGORIES[2], VALID_ALERT_CATEGORIES[1]);
   });
 
-  console.log('\n--- 6. Routing/optimization integration (pending Commit 3/4) ---');
+  console.log('\n--- 6. AccessibilityService domain operations ---');
+
+  await test('create then list then get by id round-trips a corridor record', async () => {
+    const created = await accessibilityService.createAccessibility({
+      name: 'NH-40 Nongpoh Segment',
+      road_code: 'NH-40',
+      status: 'OPEN',
+      reason: undefined,
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+    });
+
+    assert.strictEqual(created.status, 'OPEN');
+    assert.ok(created.id.startsWith('acc_'));
+
+    const listed = await accessibilityService.listAccessibility();
+    assert.ok(listed.some((record) => record.id === created.id));
+
+    const fetched = await accessibilityService.getAccessibilityById(created.id);
+    assert.ok(fetched);
+    assert.strictEqual(fetched.name, 'NH-40 Nongpoh Segment');
+    assert.strictEqual(fetched.road_code, 'NH-40');
+    assert.strictEqual(fetched.status, 'OPEN');
+  });
+
+  await test('updateAccessibilityStatus applies valid transitions and preserves status', async () => {
+    const created = await accessibilityService.createAccessibility({
+      name: 'Transition Corridor',
+      status: 'OPEN',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+    });
+
+    const closed = await accessibilityService.updateAccessibilityStatus(created.id, 'CLOSED', 'landslide');
+    assert.ok(closed);
+    assert.strictEqual(closed.status, 'CLOSED');
+    assert.strictEqual(closed.reason, 'landslide');
+
+    const reopened = await accessibilityService.updateAccessibilityStatus(created.id, 'OPEN');
+    assert.ok(reopened);
+    assert.strictEqual(reopened.status, 'OPEN');
+  });
+
+  await test('createAccessibility rejects an invalid status value', async () => {
+    await assert.rejects(
+      () => accessibilityService.createAccessibility({
+        name: 'Bad Status',
+        status: 'BROKEN' as AccessibilityStatus,
+        source: 'test',
+        geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+      }),
+      (error: unknown) => error instanceof ValidationError,
+    );
+  });
+
+  await test('updateAccessibilityStatus rejects an invalid status value', async () => {
+    const created = await accessibilityService.createAccessibility({
+      name: 'Invalid Update',
+      status: 'OPEN',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+    });
+
+    await assert.rejects(
+      () => accessibilityService.updateAccessibilityStatus(created.id, 'NONSENSE' as AccessibilityStatus),
+      (error: unknown) => error instanceof ValidationError,
+    );
+  });
+
+  await test('updateAccessibilityStatus rejects transitions outside the configured map', async () => {
+    // CLOSED → RESTRICTED is allowed; use an illegal transition to verify enforcement.
+    // RESTRICTED → RESTRICTED (self-transition) is always disallowed.
+    const created = await accessibilityService.createAccessibility({
+      name: 'Restricted Corridor',
+      status: 'RESTRICTED',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+    });
+
+    await assert.rejects(
+      () => accessibilityService.updateAccessibilityStatus(created.id, 'RESTRICTED'),
+      (error: unknown) => error instanceof ValidationError,
+    );
+  });
+
+  await test('updateAccessibilityStatus returns null for an unknown id', async () => {
+    const result = await accessibilityService.updateAccessibilityStatus('acc_does_not_exist', 'OPEN');
+    assert.strictEqual(result, null);
+  });
+
+  await test('deleteAccessibility removes a record', async () => {
+    const created = await accessibilityService.createAccessibility({
+      name: 'Deletable Corridor',
+      status: 'OPEN',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+    });
+
+    assert.strictEqual(await accessibilityService.deleteAccessibility(created.id), true);
+    assert.strictEqual(await accessibilityService.getAccessibilityById(created.id), null);
+  });
+
+  await test('deleteAccessibility returns false for an unknown id', async () => {
+    assert.strictEqual(await accessibilityService.deleteAccessibility('acc_does_not_exist'), false);
+  });
+
+  await test('getAccessibilityFeatures returns a GeoJSON FeatureCollection with [lon, lat] geometry', async () => {
+    await accessibilityService.createAccessibility({
+      name: 'GeoJSON Corridor',
+      status: 'OPEN',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+    });
+
+    const collection = await accessibilityService.getAccessibilityFeatures();
+    assert.strictEqual(collection.type, 'FeatureCollection');
+    assert.ok(collection.features.some((feature) => feature.properties.name === 'GeoJSON Corridor'));
+
+    const feature = collection.features.find((f) => f.properties.name === 'GeoJSON Corridor');
+    assert.ok(feature);
+    assert.strictEqual(feature.geometry.type, 'LineString');
+    assert.deepStrictEqual(feature.geometry.coordinates, [[91.70, 26.10], [91.90, 25.60]]);
+  });
+
+  console.log('\n--- 7. Route/corridor proximity detection ---');
+
+  await test('a route directly through a corridor is detected as affecting it', async () => {
+    const corridor = await accessibilityService.createAccessibility({
+      name: 'Through Corridor',
+      status: 'CLOSED',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+    });
+
+    const route: RouteGeometry = {
+      type: 'LineString',
+      coordinates: [[91.70, 26.10], [91.80, 25.85], [91.90, 25.60]],
+    };
+
+    const affected = await accessibilityService.findAccessibilityAffectingRoute(route);
+    assert.ok(affected.some((record) => record.id === corridor.id));
+  });
+
+  await test('a route clearly far from every corridor is not affected', async () => {
+    await accessibilityService.createAccessibility({
+      name: 'Far Corridor',
+      status: 'CLOSED',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+    });
+
+    const farRoute: RouteGeometry = {
+      type: 'LineString',
+      coordinates: [[94.00, 28.00], [94.20, 28.20]],
+    };
+
+    const affected = await accessibilityService.findAccessibilityAffectingRoute(farRoute);
+    assert.strictEqual(affected.length, 0);
+  });
+
+  await test('a route within 250 m of a corridor is affected (inclusive boundary)', async () => {
+    // Corridor along lon 91.80. Route offset by ~0.001° lon ≈ 100 m.
+    await accessibilityService.createAccessibility({
+      name: 'Boundary Corridor',
+      status: 'CLOSED',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.80, 26.00], [91.80, 26.10]] },
+    });
+
+    const nearRoute: RouteGeometry = {
+      type: 'LineString',
+      coordinates: [[91.801, 26.00], [91.801, 26.10]],
+    };
+
+    const affected = await accessibilityService.findAccessibilityAffectingRoute(nearRoute);
+    assert.ok(affected.some((record) => record.name === 'Boundary Corridor'));
+  });
+
+  await test('a route clearly beyond tolerance is not affected', async () => {
+    await accessibilityService.createAccessibility({
+      name: 'Beyond Tolerance Corridor',
+      status: 'CLOSED',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.80, 26.00], [91.80, 26.10]] },
+    });
+
+    // Offset ~0.02° lon ≈ 2 km, well beyond the 250 m tolerance.
+    const farRoute: RouteGeometry = {
+      type: 'LineString',
+      coordinates: [[91.82, 26.00], [91.82, 26.10]],
+    };
+
+    const affected = await accessibilityService.findAccessibilityAffectingRoute(farRoute);
+    assert.strictEqual(affected.length, 0);
+  });
+
+  await test('proximity detection preserves RESTRICTED vs CLOSED status (no conflation)', async () => {
+    const restricted = await accessibilityService.createAccessibility({
+      name: 'Restricted Overlap',
+      status: 'RESTRICTED',
+      source: 'test',
+      geometry: { type: 'LineString', coordinates: [[91.70, 26.10], [91.90, 25.60]] },
+    });
+
+    const route: RouteGeometry = {
+      type: 'LineString',
+      coordinates: [[91.70, 26.10], [91.90, 25.60]],
+    };
+
+    const affected = await accessibilityService.findAccessibilityAffectingRoute(route);
+    const matched = affected.find((record) => record.id === restricted.id);
+    assert.ok(matched);
+    assert.strictEqual(matched.status, 'RESTRICTED');
+    assert.notStrictEqual(matched.status, 'CLOSED');
+  });
+
+  console.log('\n--- 8. Routing/optimization integration (pending Commit 4) ---');
 
   const closedCandidate: CandidateRouteProfile = makeCandidate('candidate-a');
   const openCandidate: CandidateRouteProfile = makeCandidate('candidate-b');
