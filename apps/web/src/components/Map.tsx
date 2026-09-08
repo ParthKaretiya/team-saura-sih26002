@@ -7,6 +7,7 @@ import {
   HAZARD_ZONE_THEME,
   BASELINE_ROUTE_THEME,
   SELECTED_ROUTE_THEME,
+  ACCESSIBILITY_THEME,
 } from '../config/map-theme';
 import type {
   IncidentFeatureCollection,
@@ -16,6 +17,9 @@ import type {
   RoutingPreference,
   RouteOptimizationResult,
   RerouteEvaluationResult,
+  AccessibilityFeatureCollection,
+  AlertCollection,
+  AlertRecord,
 } from '../types/api';
 
 const API_BASE_URL = 'http://localhost:3000/api';
@@ -67,10 +71,15 @@ export default function Map() {
   const incidentsRef = useRef<IncidentFeatureCollection>({ type: 'FeatureCollection', features: [] });
   const vehiclesRef = useRef<VehicleFeatureCollection>({ type: 'FeatureCollection', features: [] });
   const hazardZonesRef = useRef<HazardZoneFeatureCollection>({ type: 'FeatureCollection', features: [] });
+  const accessibilityRef = useRef<AccessibilityFeatureCollection>({ type: 'FeatureCollection', features: [] });
 
   const [incidentCount, setIncidentCount] = useState<number>(0);
   const [vehicleCount, setVehicleCount] = useState<number>(0);
   const [hazardZoneCount, setHazardZoneCount] = useState<number>(0);
+  const [accessibilityCount, setAccessibilityCount] = useState<number>(0);
+  const [alerts, setAlerts] = useState<AlertRecord[]>([]);
+  const [accessibilityUnavailable, setAccessibilityUnavailable] = useState<boolean>(false);
+  const [alertsUnavailable, setAlertsUnavailable] = useState<boolean>(false);
   const [isLive, setIsLive] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<string>('Never');
 
@@ -218,7 +227,59 @@ export default function Map() {
         });
       }
 
-      // 2. Historical Hazard Zones Layer
+      // 2. Road Accessibility Layer
+      if (!map.getSource('accessibility-source')) {
+        map.addSource('accessibility-source', {
+          type: 'geojson',
+          data: accessibilityRef.current,
+        });
+
+        (Object.keys(ACCESSIBILITY_THEME) as Array<keyof typeof ACCESSIBILITY_THEME>).forEach((status) => {
+          map.addLayer({
+            id: `accessibility-${status.toLowerCase()}-line`,
+            type: 'line',
+            source: 'accessibility-source',
+            filter: ['==', ['get', 'status'], status],
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round',
+              ...(status === 'RESTRICTED' ? { 'line-dasharray': [2, 1.5] } : {}),
+            },
+            paint: {
+              'line-color': ACCESSIBILITY_THEME[status].color,
+              'line-width': status === 'CLOSED' ? 7 : 5,
+              'line-opacity': status === 'OPEN' ? 0.7 : 0.95,
+            },
+          });
+
+          const layerId = `accessibility-${status.toLowerCase()}-line`;
+          map.on('click', layerId, (event) => {
+            const feature = event.features?.[0];
+            if (!feature) return;
+            const properties = feature.properties as Record<string, string | undefined>;
+            const coordinates = (feature.geometry as { coordinates: [number, number][] }).coordinates;
+            const anchor = coordinates[0];
+            if (!anchor) return;
+            new maplibregl.Popup({ offset: 12 })
+              .setLngLat(anchor)
+              .setHTML(`
+                <div style="font-family: sans-serif; font-size: 12px; min-width: 210px; padding: 4px;">
+                  <div style="font-size: 11px; font-weight: 700; color: ${ACCESSIBILITY_THEME[status].color}; margin-bottom: 3px;">
+                    ROAD ${status}
+                  </div>
+                  <div style="font-size: 13px; font-weight: 600; color: #111827; margin-bottom: 4px;">${properties.name ?? 'Unnamed corridor'}</div>
+                  <div style="font-size: 12px; color: #374151;">${properties.reason ?? 'No additional reason supplied.'}</div>
+                  <div style="font-size: 10px; color: #6B7280; border-top: 1px solid #E5E7EB; margin-top: 5px; padding-top: 4px;">Source: ${properties.source ?? 'Unknown'}</div>
+                </div>
+              `)
+              .addTo(map);
+          });
+          map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+        });
+      }
+
+      // 3. Historical Hazard Zones Layer
       if (!map.getSource('hazard-zones-source')) {
         map.addSource('hazard-zones-source', {
           type: 'geojson',
@@ -409,6 +470,38 @@ export default function Map() {
     };
     fetchHazardZones();
 
+    const fetchAccessibilityIntelligence = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/accessibility`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = (await response.json()) as AccessibilityFeatureCollection;
+        accessibilityRef.current = data;
+        setAccessibilityCount(data.features.length);
+        setAccessibilityUnavailable(false);
+        if (map.isStyleLoaded()) {
+          const source = map.getSource('accessibility-source') as maplibregl.GeoJSONSource;
+          if (source) source.setData(data);
+          else setupLayers();
+        }
+      } catch (error) {
+        console.warn('Failed to load accessibility corridors:', error);
+        setAccessibilityUnavailable(true);
+      }
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/alerts`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = (await response.json()) as { data?: AlertCollection };
+        setAlerts(payload.data?.items ?? []);
+        setAlertsUnavailable(false);
+      } catch (error) {
+        console.warn('Failed to load accessibility alerts:', error);
+        setAlertsUnavailable(true);
+      }
+    };
+    fetchAccessibilityIntelligence();
+    const accessibilityInterval = setInterval(fetchAccessibilityIntelligence, 10_000);
+
     // Polling Loop for Incidents & Vehicles
     const fetchData = async () => {
       try {
@@ -448,6 +541,7 @@ export default function Map() {
 
     return () => {
       clearInterval(pollInterval);
+      clearInterval(accessibilityInterval);
       map.remove();
       mapRef.current = null;
     };
@@ -706,6 +800,19 @@ export default function Map() {
             </div>
           ))}
 
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #E5E7EB' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Road Accessibility {accessibilityUnavailable ? '· Unavailable' : `(${accessibilityCount})`}
+            </div>
+            {(Object.keys(ACCESSIBILITY_THEME) as Array<keyof typeof ACCESSIBILITY_THEME>).map((status) => (
+              <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, fontSize: 11 }}>
+                <span style={{ width: 16, height: status === 'RESTRICTED' ? 3 : 5, backgroundColor: ACCESSIBILITY_THEME[status].color, display: 'inline-block', borderRadius: 2 }} />
+                <span>{ACCESSIBILITY_THEME[status].label}</span>
+              </div>
+            ))}
+            {accessibilityUnavailable && <div style={{ color: '#92400E', fontSize: 10 }}>Corridor layer is temporarily unavailable.</div>}
+          </div>
+
           {/* Layer Controls */}
           <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #E5E7EB' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, cursor: 'pointer', color: '#374151' }}>
@@ -726,6 +833,26 @@ export default function Map() {
               />
               <span>Show Hazard Zones ({hazardZoneCount})</span>
             </label>
+          </div>
+
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #E5E7EB' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Active Road Alerts {alertsUnavailable ? '· Unavailable' : `(${alerts.length})`}
+            </div>
+            {alerts.slice(0, 3).map((alert) => {
+              const critical = alert.severity === 'CRITICAL';
+              return (
+                <div key={alert.id} style={{ marginBottom: 5, padding: '5px 6px', borderRadius: 4, backgroundColor: critical ? '#FEF2F2' : '#FFFBEB', border: `1px solid ${critical ? '#FCA5A5' : '#FCD34D'}` }}>
+                  <div style={{ color: critical ? '#B91C1C' : '#92400E', fontWeight: 700, fontSize: 10 }}>
+                    {alert.severity} · {alert.category}
+                    {alert.routeCandidateId ? ' · ACTIVE ROUTE' : ''}
+                  </div>
+                  <div style={{ color: '#374151', fontSize: 10 }}>{alert.title}: {alert.message}</div>
+                </div>
+              );
+            })}
+            {!alertsUnavailable && alerts.length === 0 && <div style={{ color: '#6B7280', fontSize: 10 }}>No active accessibility alerts.</div>}
+            {alertsUnavailable && <div style={{ color: '#92400E', fontSize: 10 }}>Alerts are temporarily unavailable.</div>}
           </div>
 
           <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 10, textAlign: 'right' }}>
@@ -957,6 +1084,34 @@ export default function Map() {
               <strong>Why:</strong> {optimization.optimization.selectionReason}
             </div>
 
+            {optimization.accessibility && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: '6px 8px',
+                  borderRadius: 4,
+                  backgroundColor: optimization.accessibility.status === 'ALL_CANDIDATES_CLOSED' ? '#FEF2F2' : optimization.accessibility.status === 'RESTRICTED' ? '#FFFBEB' : '#ECFDF5',
+                  border: `1px solid ${optimization.accessibility.status === 'ALL_CANDIDATES_CLOSED' ? '#FCA5A5' : optimization.accessibility.status === 'RESTRICTED' ? '#FCD34D' : '#A7F3D0'}`,
+                  color: optimization.accessibility.status === 'ALL_CANDIDATES_CLOSED' ? '#B91C1C' : optimization.accessibility.status === 'RESTRICTED' ? '#92400E' : '#065F46',
+                  fontSize: 11,
+                }}
+              >
+                <strong>
+                  {optimization.accessibility.status === 'ALL_CANDIDATES_CLOSED'
+                    ? 'Accessibility degraded: all candidates closed'
+                    : optimization.selectedRoute.accessibility?.status === 'RESTRICTED'
+                      ? 'Selected route has a restricted corridor'
+                      : optimization.accessibility.affectedCorridors.some((corridor) => corridor.status === 'CLOSED')
+                        ? 'Closure-free route selected; closed candidate excluded'
+                        : 'Selected route is accessibility-safe'}
+                </strong>
+                {optimization.accessibility.reason && <div style={{ marginTop: 2 }}>{optimization.accessibility.reason}</div>}
+                {optimization.selectedRoute.accessibility?.affectedCorridors.length ? (
+                  <div style={{ marginTop: 2 }}>Affected: {optimization.selectedRoute.accessibility.affectedCorridors.map((corridor) => corridor.name).join(', ')}</div>
+                ) : null}
+              </div>
+            )}
+
             {optimization.safetyIntelligence.status === 'DEGRADED' && (
               <div
                 style={{
@@ -1072,6 +1227,16 @@ export default function Map() {
                   {rerouteResult.rerouteRecommended ? '✅ Reroute Recommended' : 'ℹ️ No Reroute Needed'}
                 </div>
                 <div style={{ fontSize: 11, color: '#374151' }}>{rerouteResult.reason}</div>
+
+                {rerouteResult.accessibility && (
+                  <div style={{ fontSize: 10, color: rerouteResult.accessibility.status === 'ALL_CANDIDATES_CLOSED' ? '#B91C1C' : '#92400E', marginTop: 3 }}>
+                    {rerouteResult.accessibility.status === 'ALL_CANDIDATES_CLOSED'
+                      ? 'Accessibility degraded: no closure-free alternative is available.'
+                      : rerouteResult.currentRoute.accessibility?.status === 'CLOSED'
+                        ? 'Current route is affected by a closed corridor.'
+                        : 'Accessibility evaluated for current route and alternatives.'}
+                  </div>
+                )}
 
                 {rerouteResult.safetyIntelligence.status === 'DEGRADED' && (
                   <div style={{ fontSize: 10, color: '#92400E', marginTop: 3 }}>

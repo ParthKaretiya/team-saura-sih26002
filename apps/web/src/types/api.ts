@@ -95,6 +95,72 @@ export interface HazardZoneFeatureCollection {
   features: HazardZoneFeature[];
 }
 
+export type AccessibilityStatus = 'OPEN' | 'RESTRICTED' | 'CLOSED';
+
+export interface AccessibilityFeature {
+  type: 'Feature';
+  geometry: RouteResponse['geometry'];
+  properties: {
+    id: string;
+    name: string;
+    roadCode?: string;
+    status: AccessibilityStatus;
+    reason?: string;
+    source: string;
+    updatedAt: string;
+  };
+}
+
+export interface AccessibilityFeatureCollection {
+  type: 'FeatureCollection';
+  features: AccessibilityFeature[];
+}
+
+export interface AccessibilityRecord {
+  id: string;
+  name: string;
+  road_code?: string;
+  status: AccessibilityStatus;
+  reason?: string;
+  source: string;
+  geometry: RouteResponse['geometry'];
+  created_at: string;
+  updated_at: string;
+}
+
+export type AlertCategory = 'ROAD_CLOSURE' | 'ROAD_RESTRICTION' | 'ROUTE_HAZARD';
+export type AlertSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+
+export interface AlertRecord {
+  id: string;
+  category: AlertCategory;
+  severity: AlertSeverity;
+  title: string;
+  message: string;
+  accessibilityCorridorId?: string;
+  accessibilityStatus?: AccessibilityStatus;
+  routeCandidateId?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AlertCollection {
+  items: AlertRecord[];
+}
+
+export interface AccessibilitySummary {
+  status: 'ACCESSIBLE' | 'RESTRICTED' | 'ALL_CANDIDATES_CLOSED' | 'UNKNOWN';
+  affectedCorridors: AccessibilityRecord[];
+  reason?: string;
+}
+
+export interface CandidateAccessibility {
+  status: 'ACCESSIBLE' | 'RESTRICTED' | 'CLOSED' | 'UNKNOWN';
+  isEligible: boolean;
+  affectedCorridors: AccessibilityRecord[];
+  exclusionReason?: string;
+}
+
 export type RoutingPreference = 'FASTEST' | 'BALANCED' | 'SAFEST';
 
 export interface CandidateRouteProfile {
@@ -119,6 +185,7 @@ export interface CandidateRouteProfile {
     hazardScore: number;
     totalCost: number;
   };
+  accessibility?: CandidateAccessibility;
 }
 
 export interface RouteOptimizationResult {
@@ -141,6 +208,7 @@ export interface RouteOptimizationResult {
     additionalDistanceKm: number;
     additionalDurationMinutes: number;
   };
+  accessibility?: AccessibilitySummary;
 }
 
 export interface RerouteEvaluationResult {
@@ -151,6 +219,7 @@ export interface RerouteEvaluationResult {
     meanRiskScore: number;
     maxRiskScore: number;
     hazardousSegmentCount: number;
+    accessibility?: CandidateAccessibility;
   };
   safetyIntelligence: {
     status: 'AVAILABLE' | 'DEGRADED';
@@ -163,4 +232,5 @@ export interface RerouteEvaluationResult {
     additionalDurationSeconds: number;
   };
   evaluatedCandidatesCount: number;
+  accessibility?: AccessibilitySummary;
 }

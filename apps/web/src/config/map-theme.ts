@@ -80,3 +80,9 @@ export const HAZARD_ZONE_THEME = {
   strokeColor: '#FFFFFF',
   strokeWidth: 2,
 };
+
+export const ACCESSIBILITY_THEME = {
+  OPEN: { color: '#10B981', label: 'Open corridor' },
+  RESTRICTED: { color: '#F59E0B', label: 'Restricted corridor' },
+  CLOSED: { color: '#DC2626', label: 'Closed corridor' },
+} as const;
