@@ -31,7 +31,6 @@ import type { AccessibilityRecord, AccessibilityStatus } from '../types/accessib
 
 let passed = 0;
 let failed = 0;
-let pending = 0;
 
 async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
   try {
@@ -42,26 +41,6 @@ async function test(name: string, fn: () => Promise<void> | void): Promise<void>
     console.error(`  [FAIL] ${name}`);
     console.error(`         ${(error as Error).message}`);
     failed++;
-  }
-}
-
-async function pendingTest(name: string, reason: string, fn: () => Promise<void> | void): Promise<void> {
-  try {
-    await fn();
-    // If the guard did not throw, the service already exists and this test
-    // should now be an active assertion rather than a pending one.
-    console.log(`  [ACTIVE (unexpected pass)] ${name}`);
-    passed++;
-  } catch (error) {
-    if ((error as Error).message === 'NOT_IMPLEMENTED') {
-      console.log(`  [PENDING] ${name}`);
-      console.log(`            ${reason}`);
-      pending++;
-    } else {
-      console.error(`  [FAIL] ${name}`);
-      console.error(`         ${(error as Error).message}`);
-      failed++;
-    }
   }
 }
 
@@ -76,24 +55,17 @@ function withinTolerance(distanceMeters: number): boolean {
 
 // Future RoutingService accessibility contract — does not exist yet at this commit.
 type AccessibilityRoutingContract = {
-  filterAccessibilityEligible?: (
+  filterAccessibilityEligible: (
     candidates: CandidateRouteProfile[],
-    corridors: AccessibilityRecord[],
-  ) => CandidateRouteProfile[];
-  evaluateAccessibility?: (
+    corridors?: AccessibilityRecord[],
+  ) => Promise<CandidateRouteProfile[]>;
+  evaluateAccessibility: (
     candidates: CandidateRouteProfile[],
-    corridors: AccessibilityRecord[],
-  ) => unknown;
+    corridors?: AccessibilityRecord[],
+  ) => Promise<CandidateRouteProfile[]>;
 };
 
 const routingContract = routingService as unknown as AccessibilityRoutingContract;
-
-function guardImplemented<T>(value: T | undefined, method: string): T {
-  if (value === undefined) {
-    throw new Error('NOT_IMPLEMENTED');
-  }
-  return value;
-}
 
 async function runTests(): Promise<void> {
   console.log('==================================================');
@@ -407,72 +379,108 @@ async function runTests(): Promise<void> {
     assert.notStrictEqual(matched.status, 'CLOSED');
   });
 
-  console.log('\n--- 8. Routing/optimization integration (pending Commit 4) ---');
+  console.log('\n--- 8. Routing/optimization integration ---');
 
   const closedCandidate: CandidateRouteProfile = makeCandidate('candidate-a');
-  const openCandidate: CandidateRouteProfile = makeCandidate('candidate-b');
+  const openCandidate: CandidateRouteProfile = makeCandidate('candidate-b', [[94.7, 27.1], [94.9, 26.6]]);
   const closedCorridor: AccessibilityRecord = makeCorridor('corr-1', 'CLOSED');
 
-  await pendingTest(
+  await test(
     'a candidate intersecting a CLOSED corridor is excluded from eligibility',
-    'RoutingService accessibility filtering (Commit 3)',
-    () => {
-      const filter = guardImplemented(routingContract.filterAccessibilityEligible, 'filterAccessibilityEligible');
-      const eligible = filter([closedCandidate, openCandidate], [closedCorridor]);
+    async () => {
+      const eligible = await routingContract.filterAccessibilityEligible([closedCandidate, openCandidate], [closedCorridor]);
       assert.deepStrictEqual(eligible.map((candidate) => candidate.candidateId), [openCandidate.candidateId]);
+      assert.strictEqual(eligible[0].accessibility?.status, 'ACCESSIBLE');
     },
   );
 
-  await pendingTest(
+  await test(
     'all-candidates-closed degrades honestly without fabricating an accessible route',
-    'AccessibilityService + RoutingService degradation path (Commit 3)',
-    () => {
-      const filter = guardImplemented(routingContract.filterAccessibilityEligible, 'filterAccessibilityEligible');
-      const eligible = filter([closedCandidate], [closedCorridor]);
-      // Contract: eligible remains usable, but accessibility must be surfaced as
-      // degraded rather than silently treating the closed corridor as clear.
-      assert.strictEqual(eligible.length >= 0, true);
+    async () => {
+      const eligible = await routingContract.filterAccessibilityEligible([closedCandidate], [closedCorridor]);
+      const result = routingService.optimizeCandidateProfiles(eligible, 'BALANCED');
+      assert.strictEqual(result.selectedRoute.accessibility?.status, 'CLOSED');
+      assert.strictEqual(result.accessibility?.status, 'ALL_CANDIDATES_CLOSED');
+      assert.match(result.optimization.selectionReason, /CLOSED|closure-free/i);
     },
   );
 
-  await pendingTest(
+  await test(
     'a RESTRICTED corridor does not hard-exclude a candidate',
-    'RoutingService accessibility filtering (Commit 4)',
-    () => {
-      const evaluate = guardImplemented(routingContract.evaluateAccessibility, 'evaluateAccessibility');
+    async () => {
       const restrictedCorridor = makeCorridor('corr-2', 'RESTRICTED');
-      // Contract: restricted is surfaced (warning) but the candidate is not dropped.
-      void evaluate([closedCandidate], [restrictedCorridor]);
-      assert.strictEqual(true, true);
+      const eligible = await routingContract.filterAccessibilityEligible([closedCandidate, openCandidate], [restrictedCorridor]);
+      assert.deepStrictEqual(eligible.map((candidate) => candidate.candidateId), [closedCandidate.candidateId, openCandidate.candidateId]);
+      assert.strictEqual(eligible[0].accessibility?.status, 'RESTRICTED');
+      assert.strictEqual(eligible[0].accessibility?.isEligible, true);
     },
   );
 
-  await pendingTest(
+  await test(
     'accessibility filtering happens before Step-8 selection without altering risk scoring or ML',
-    'Accessibility integration into optimizeCandidateProfiles (Commit 4)',
-    () => {
-      const filter = guardImplemented(routingContract.filterAccessibilityEligible, 'filterAccessibilityEligible');
-      // Contract: filtering is a pre-selection gate; it must not mutate candidate risk.
-      const eligible = filter([closedCandidate, openCandidate], [closedCorridor]);
+    async () => {
+      const eligible = await routingContract.filterAccessibilityEligible([closedCandidate, openCandidate], [closedCorridor]);
       assert.strictEqual(openCandidate.risk.meanScore, eligible[0].risk.meanScore);
+      assert.strictEqual(routingService.optimizeCandidateProfiles(eligible, 'FASTEST').selectedCandidateId, openCandidate.candidateId);
+    },
+  );
+
+  await test(
+    'OPEN corridors do not exclude candidates or alter the Step-8 selector',
+    async () => {
+      const openCorridor = makeCorridor('corr-3', 'OPEN');
+      const eligible = await routingContract.filterAccessibilityEligible([closedCandidate, openCandidate], [openCorridor]);
+      assert.deepStrictEqual(eligible.map((candidate) => candidate.candidateId), [closedCandidate.candidateId, openCandidate.candidateId]);
+      assert.strictEqual(eligible[0].accessibility?.status, 'ACCESSIBLE');
+    },
+  );
+
+  await test(
+    'a closed current route can recommend a closure-free alternative under existing reroute criteria',
+    async () => {
+      const saferAlternative = makeCandidate('candidate-accessible', [[94.7, 27.1], [94.9, 26.6]]);
+      saferAlternative.risk = {
+        ...saferAlternative.risk,
+        overallLevel: 'LOW',
+        meanScore: 10,
+        maxScore: 10,
+      };
+      const [current] = await routingContract.evaluateAccessibility([closedCandidate], [closedCorridor]);
+      const alternatives = await routingContract.filterAccessibilityEligible([saferAlternative], [closedCorridor]);
+      const reroute = routingService.evaluateReroute(current, alternatives);
+      assert.strictEqual(reroute.rerouteRecommended, true);
+      assert.strictEqual(reroute.recommendedRoute?.candidateId, saferAlternative.candidateId);
+    },
+  );
+
+  await test(
+    'a closed current route reports degraded reroute availability when all alternatives are closed',
+    async () => {
+      const [current] = await routingContract.evaluateAccessibility([closedCandidate], [closedCorridor]);
+      const alternatives = await routingContract.filterAccessibilityEligible([closedCandidate], [closedCorridor]);
+      const reroute = routingService.evaluateReroute(current, alternatives);
+      assert.strictEqual(reroute.rerouteRecommended, false);
+      assert.strictEqual(reroute.currentRoute.accessibility?.status, 'CLOSED');
+      assert.strictEqual(reroute.accessibility?.status, 'ALL_CANDIDATES_CLOSED');
+      assert.match(reroute.reason, /CLOSED|closure-free/i);
     },
   );
 
   console.log('\n==================================================');
-  console.log(`Results: ${passed} passed, ${failed} failed, ${pending} pending.`);
+  console.log(`Results: ${passed} passed, ${failed} failed.`);
   console.log('==================================================');
 
   if (failed > 0) process.exit(1);
 }
 
-function makeCandidate(candidateId: string): CandidateRouteProfile {
+function makeCandidate(candidateId: string, coordinates: RouteGeometry['coordinates'] = [[91.7, 26.1], [91.9, 25.6]]): CandidateRouteProfile {
   return {
     candidateId,
     name: candidateId,
     isBaseline: false,
     distanceMeters: 100_000,
     durationSeconds: 7_200,
-    geometry: { type: 'LineString', coordinates: [[91.7, 26.1], [91.9, 25.6]] },
+    geometry: { type: 'LineString', coordinates },
     instructions: [],
     risk: {
       overallLevel: 'MEDIUM',

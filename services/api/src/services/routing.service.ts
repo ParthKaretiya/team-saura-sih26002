@@ -1,11 +1,15 @@
 import { routingConfig } from '../config/routing.js';
 import { OPTIMIZATION_CONFIG, type OptimizationWeights } from '../config/optimization.config.js';
 import { RISK_CONFIG } from '../config/risk.config.js';
+import { ACCESSIBILITY_CONFIG } from '../config/accessibility.config.js';
 import { GraphHopperClient, RoutingEngineError } from './graphhopper.client.js';
 import { riskService, type RouteRiskEvaluationContext } from './risk.service.js';
 import { mlService } from './ml.service.js';
+import { accessibilityService, routeToCorridorDistanceMeters } from './accessibility.service.js';
+import type { AccessibilityRecord } from '../types/accessibility.types.js';
 import type {
   Coordinate,
+  RouteGeometry,
   RouteResponse,
   RouteNavigationInstruction,
   RoutingOptions,
@@ -13,6 +17,8 @@ import type {
   RerouteEvaluationResult,
   RouteOptimizationResult,
   RoutingPreference,
+  CandidateAccessibility,
+  RouteAccessibilitySummary,
 } from '../types/routing.types.js';
 
 export { RoutingEngineError };
@@ -167,8 +173,26 @@ export class RoutingService {
     preference: RoutingPreference = 'BALANCED',
     options?: RoutingOptions,
   ): Promise<RouteOptimizationResult> {
-    const candidates = await this.profileCandidateRoutes(origin, destination, options);
-    return this.optimizeCandidateProfiles(candidates, preference);
+    const candidateRoutes = await this.calculateCandidateRoutes(origin, destination, options);
+    const corridors = await accessibilityService.listAccessibility();
+    const accessibility = this.evaluateRouteAccessibility(candidateRoutes, corridors);
+    const eligibleIndexes = accessibility
+      .map((candidateAccessibility, index) => candidateAccessibility.isEligible ? index : -1)
+      .filter((index) => index >= 0);
+    const selectedIndexes = eligibleIndexes.length > 0
+      ? eligibleIndexes
+      : candidateRoutes.map((_, index) => index);
+    const riskContext = await riskService.createRouteRiskEvaluationContext();
+    const eligibleCandidates = await Promise.all(selectedIndexes.map(async (index) => ({
+      ...(await this.profileCandidateRoute(candidateRoutes[index], index, index === 0, riskContext)),
+      accessibility: accessibility[index],
+    })));
+    const result = this.optimizeCandidateProfiles(eligibleCandidates, preference);
+
+    return {
+      ...result,
+      accessibility: this.accessibilitySummaryFor(accessibility.map((item) => ({ accessibility: item }))),
+    };
   }
 
   /**
@@ -189,20 +213,152 @@ export class RoutingService {
       this.profileCandidateRoute(route, index, index === 0, riskContext),
     ));
 
-    return this.evaluateReroute(currentProfile, candidates);
+    // Read corridor data once for this reroute request and reuse it for the
+    // current route and every alternative.
+    const corridors = await accessibilityService.listAccessibility();
+    const [annotatedCurrentRoute] = this.annotateAccessibility([currentProfile], corridors);
+    const annotatedCandidates = this.annotateAccessibility(candidates, corridors);
+    return this.evaluateReroute(
+      annotatedCurrentRoute,
+      this.eligibleAccessibilityCandidates(annotatedCandidates),
+      this.accessibilitySummaryFor([annotatedCurrentRoute, ...annotatedCandidates]),
+    );
+  }
+
+  /**
+   * Evaluates corridor accessibility for each candidate and returns the subset
+   * that is eligible for normal optimization. CLOSED corridors hard-exclude a
+   * candidate (when a usable alternative exists); RESTRICTED and OPEN corridors
+   * do not exclude. Each candidate is annotated with its accessibility state.
+   */
+  async evaluateAccessibility(
+    candidates: CandidateRouteProfile[],
+    corridors?: AccessibilityRecord[],
+  ): Promise<CandidateRouteProfile[]> {
+    return this.annotateAccessibility(candidates, corridors ?? await accessibilityService.listAccessibility());
+  }
+
+  async filterAccessibilityEligible(
+    candidates: CandidateRouteProfile[],
+    corridors?: AccessibilityRecord[],
+  ): Promise<CandidateRouteProfile[]> {
+    const annotated = await this.evaluateAccessibility(candidates, corridors);
+    return this.eligibleAccessibilityCandidates(annotated);
+  }
+
+  /**
+   * Annotates a single candidate with its corridor accessibility state.
+   * CLOSED intersections mark the candidate ineligible; RESTRICTED is recorded
+   * for surfacing but does not exclude.
+   */
+  private annotateAccessibility(
+    candidates: CandidateRouteProfile[],
+    corridors: AccessibilityRecord[],
+  ): CandidateRouteProfile[] {
+    return candidates.map((candidate) => {
+      return { ...candidate, accessibility: this.accessibilityForGeometry(candidate.geometry, corridors) };
+    });
+  }
+
+  private evaluateRouteAccessibility(
+    routes: RouteResponse[],
+    corridors: AccessibilityRecord[],
+  ): CandidateAccessibility[] {
+    return routes.map((route) => this.accessibilityForGeometry(route.geometry, corridors));
+  }
+
+  private accessibilityForGeometry(
+    geometry: RouteGeometry,
+    corridors: AccessibilityRecord[],
+  ): CandidateAccessibility {
+    const affectedCorridors = corridors.filter((corridor) =>
+      routeToCorridorDistanceMeters(geometry, corridor.geometry)
+        <= ACCESSIBILITY_CONFIG.routing.intersectionToleranceMeters,
+    );
+    const hasClosedCorridor = affectedCorridors.some((corridor) => corridor.status === 'CLOSED');
+    const hasRestrictedCorridor = affectedCorridors.some((corridor) => corridor.status === 'RESTRICTED');
+
+    return {
+      status: hasClosedCorridor ? 'CLOSED' : hasRestrictedCorridor ? 'RESTRICTED' : 'ACCESSIBLE',
+      isEligible: !hasClosedCorridor,
+      affectedCorridors,
+      exclusionReason: hasClosedCorridor
+        ? 'Candidate intersects one or more CLOSED corridors.'
+        : undefined,
+    };
+  }
+
+  private eligibleAccessibilityCandidates(candidates: CandidateRouteProfile[]): CandidateRouteProfile[] {
+    const eligible = candidates.filter((candidate) => candidate.accessibility?.isEligible !== false);
+    // A best-effort route is retained only when no closure-free candidate was
+    // returned by GraphHopper. Its CLOSED state remains explicit in the result.
+    return eligible.length > 0 ? eligible : candidates;
+  }
+
+  /**
+   * Builds an overall accessibility summary for a set of annotated candidates.
+   */
+  private accessibilitySummaryFor(
+    candidates: Array<Pick<CandidateRouteProfile, 'accessibility'>>,
+  ): RouteAccessibilitySummary | undefined {
+    const accessibility = candidates.map((candidate) => candidate.accessibility);
+    const affectedCorridors = Array.from(
+      new Map(accessibility.flatMap((item) => item?.affectedCorridors ?? []).map((corridor) => [corridor.id, corridor])).values(),
+    );
+    const anyEligible = accessibility.some((item) => item?.isEligible !== false);
+    const hasClosedCorridor = affectedCorridors.some((corridor) => corridor.status === 'CLOSED');
+    const hasRestrictedCorridor = affectedCorridors.some((corridor) => corridor.status === 'RESTRICTED');
+    if (!hasClosedCorridor && !hasRestrictedCorridor) {
+      return undefined;
+    }
+
+    if (hasClosedCorridor && !anyEligible) {
+      return {
+        status: 'ALL_CANDIDATES_CLOSED',
+        affectedCorridors,
+        reason: 'All available candidates intersect CLOSED corridors; no closure-free alternative was found.',
+      };
+    }
+
+    if (hasRestrictedCorridor) {
+      return {
+        status: 'RESTRICTED',
+        affectedCorridors,
+      };
+    }
+
+    return {
+      status: 'ACCESSIBLE',
+      affectedCorridors,
+    };
   }
 
   evaluateReroute(
     currentRoute: CandidateRouteProfile,
     candidates: CandidateRouteProfile[],
+    accessibility?: RouteAccessibilitySummary,
   ): RerouteEvaluationResult {
     const safetyIntelligence = this.safetyIntelligenceFor([currentRoute, ...candidates]);
+    const routeAccessibility = accessibility ?? this.accessibilitySummaryFor([currentRoute, ...candidates]);
     const currentRouteSummary = {
       riskLevel: currentRoute.risk.overallLevel,
       meanRiskScore: currentRoute.risk.meanScore,
       maxRiskScore: currentRoute.risk.maxScore,
       hazardousSegmentCount: currentRoute.risk.hazardousSegmentCount,
+      ...(currentRoute.accessibility ? { accessibility: currentRoute.accessibility } : {}),
     };
+
+    if (currentRoute.accessibility?.status === 'CLOSED'
+      && routeAccessibility?.status === 'ALL_CANDIDATES_CLOSED') {
+      return {
+        rerouteRecommended: false,
+        reason: 'Rerouting is unavailable because the current route and all available candidates intersect CLOSED corridors; no closure-free alternative was found.',
+        currentRoute: currentRouteSummary,
+        evaluatedCandidatesCount: candidates.length,
+        safetyIntelligence,
+        accessibility: routeAccessibility,
+      };
+    }
 
     if (!this.hasUsableRisk(currentRoute) || safetyIntelligence.status === 'DEGRADED') {
       return {
@@ -211,18 +367,22 @@ export class RoutingService {
         currentRoute: currentRouteSummary,
         evaluatedCandidatesCount: candidates.length,
         safetyIntelligence,
+        ...(routeAccessibility ? { accessibility: routeAccessibility } : {}),
       };
     }
 
     const currentExposure = this.hazardExposure(currentRoute);
     const currentHasCriticalIncident = this.hasCriticalActiveIncident(currentRoute);
-    if (!currentHasCriticalIncident && currentExposure < OPTIMIZATION_CONFIG.rerouting.triggerScore) {
+    if (currentRoute.accessibility?.status !== 'CLOSED'
+      && !currentHasCriticalIncident
+      && currentExposure < OPTIMIZATION_CONFIG.rerouting.triggerScore) {
       return {
         rerouteRecommended: false,
         reason: 'Rerouting is not recommended because the current route remains below the configured risk threshold.',
         currentRoute: currentRouteSummary,
         evaluatedCandidatesCount: candidates.length,
         safetyIntelligence,
+        ...(routeAccessibility ? { accessibility: routeAccessibility } : {}),
       };
     }
 
@@ -240,6 +400,7 @@ export class RoutingService {
         currentRoute: currentRouteSummary,
         evaluatedCandidatesCount: candidates.length,
         safetyIntelligence,
+        ...(routeAccessibility ? { accessibility: routeAccessibility } : {}),
       };
     }
 
@@ -257,6 +418,7 @@ export class RoutingService {
       },
       evaluatedCandidatesCount: candidates.length,
       safetyIntelligence,
+      ...(routeAccessibility ? { accessibility: routeAccessibility } : {}),
     };
   }
 
@@ -278,6 +440,18 @@ export class RoutingService {
     const weights = this.getWeights(preference);
     const scoredCandidates = candidates.map((candidate) => this.withNormalizedCost(candidate, baseline, weights));
     const scoredBaseline = scoredCandidates.find((candidate) => candidate.candidateId === baseline.candidateId)!;
+
+    if (scoredCandidates.every((candidate) => candidate.accessibility?.status === 'CLOSED')) {
+      const selected = this.sortByTravelCost(scoredCandidates)[0];
+      return this.buildOptimizationResult(
+        selected,
+        scoredBaseline,
+        scoredCandidates,
+        'SPEED_BASELINE',
+        'Best-effort route selected because all available candidates intersect CLOSED corridors; no closure-free alternative was found.',
+        preference,
+      );
+    }
 
     if (!baselineHasRisk) {
       return this.buildOptimizationResult(
@@ -515,6 +689,7 @@ export class RoutingService {
         additionalDistanceKm: Math.max(0, Math.round((selectedRoute.distanceMeters - baselineRoute.distanceMeters) / 100) / 10),
         additionalDurationMinutes: Math.max(0, Math.round((selectedRoute.durationSeconds - baselineRoute.durationSeconds) / 6) / 10),
       },
+      accessibility: this.accessibilitySummaryFor(candidates),
     };
   }
 

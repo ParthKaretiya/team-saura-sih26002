@@ -74,7 +74,7 @@ function pointToSegmentDistanceMeters(
 /**
  * Minimum distance in meters between a route LineString and a corridor LineString.
  */
-function routeToCorridorDistanceMeters(route: RouteGeometry, corridor: RouteGeometry): number {
+export function routeToCorridorDistanceMeters(route: RouteGeometry, corridor: RouteGeometry): number {
   const corridorCoords = corridor.coordinates;
   let minDistance = Number.POSITIVE_INFINITY;
 

@@ -1,5 +1,5 @@
 import { RiskLevel, RouteRiskSummary } from './risk.types.js';
-import { MLPredictionData } from './ml.types.js';
+import type { AccessibilityRecord } from './accessibility.types.js';
 
 /**
  * All GeoJSON positions use [longitude, latitude] ordering (RFC 7946).
@@ -47,6 +47,25 @@ export interface RoutingOptions {
 
 export type RoutingPreference = 'FASTEST' | 'BALANCED' | 'SAFEST';
 
+export type RouteAccessibility =
+  | 'ACCESSIBLE'
+  | 'RESTRICTED'
+  | 'CLOSED'
+  | 'UNKNOWN';
+
+export interface CandidateAccessibility {
+  status: RouteAccessibility;
+  isEligible: boolean;
+  affectedCorridors: AccessibilityRecord[];
+  exclusionReason?: string;
+}
+
+export interface RouteAccessibilitySummary {
+  status: 'ACCESSIBLE' | 'RESTRICTED' | 'ALL_CANDIDATES_CLOSED' | 'UNKNOWN';
+  affectedCorridors: AccessibilityRecord[];
+  reason?: string;
+}
+
 export interface CandidateRouteProfile {
   candidateId: string;
   name: string;
@@ -69,6 +88,7 @@ export interface CandidateRouteProfile {
     hazardScore: number;
     totalCost: number;
   };
+  accessibility?: CandidateAccessibility;
 }
 
 export interface RouteOptimizationResult {
@@ -91,6 +111,7 @@ export interface RouteOptimizationResult {
     additionalDistanceKm: number;
     additionalDurationMinutes: number;
   };
+  accessibility?: RouteAccessibilitySummary;
 }
 
 export interface RerouteEvaluationResult {
@@ -101,6 +122,7 @@ export interface RerouteEvaluationResult {
     meanRiskScore: number;
     maxRiskScore: number;
     hazardousSegmentCount: number;
+    accessibility?: CandidateAccessibility;
   };
   safetyIntelligence: {
     status: 'AVAILABLE' | 'DEGRADED';
@@ -113,4 +135,5 @@ export interface RerouteEvaluationResult {
     additionalDurationSeconds: number;
   };
   evaluatedCandidatesCount: number;
+  accessibility?: RouteAccessibilitySummary;
 }
