@@ -9,7 +9,7 @@ This document describes the high-level architecture and current engineering impl
 | Component / Layer | Location | Purpose | Actual Status |
 | :--- | :--- | :--- | :--- |
 | **API Server & Health** | `services/api` | Node.js Express + TypeScript backend with health endpoint and database check. | **WORKING** |
-| **PostGIS Migrations & Seeds** | `services/api/src/db` | Migrations for PostGIS, `vehicles`, `incidents`, and `historical_landslides` with GIST indexes and seed runner (`npm run db:seed`). | **WORKING** |
+| **PostGIS Migrations & Seeds** | `services/api/src/db` | Migrations for PostGIS, `vehicles`, `incidents`, `historical_landslides`, and `road_accessibility` with GIST indexes and seed runner (`npm run db:seed`). | **WORKING** |
 | **Weather Integration** | `services/api/src/services` | Normalized weather abstraction for Open-Meteo with input validation (`GET /api/weather`). | **WORKING** |
 | **Incident Management API** | `services/api/src/controllers` | Incident lifecycle (`REPORTED`, `VERIFIED`, `ACTIVE`, `RESOLVED`, `REJECTED`) and GeoJSON endpoints. | **WORKING** |
 | **Vehicle Tracking API** | `services/api/src/controllers` | Real-time GPS coordinate telemetry updates and GeoJSON fleet listing. | **WORKING** |
@@ -17,77 +17,100 @@ This document describes the high-level architecture and current engineering impl
 | **GraphHopper Routing Service** | `services/routing` | Local GraphHopper 10.2 engine running on Java 17 with North-East India OSM road network. | **WORKING** |
 | **Routing API Endpoint** | `services/api/src/controllers` | `GET /api/routes` with coordinate validation, normalization, and error handling. | **WORKING** |
 | **Risk Intelligence Engine** | `services/api/src/services` | Multi-factor risk engine (`risk.service.ts`) computing weighted score $[0, 100]$ from Weather ($35\%$) + Slope ($25\%$) + Incidents ($25\%$) + Historical Hotspots ($15\%$), route sampling, and `/api/risk/*` endpoints. | **WORKING** |
-| **Interactive Map Dashboard** | `apps/web` | React + MapLibre GL JS rendering live hazard markers, vehicles, route LineStrings, corridor risk indicator banner, and toggleable hazard zone overlays. | **WORKING** |
-| **DEM & Slope Engine** | `services/ml` | Python DEM processor (`dem_processor.py`) calculating slope angles from elevation arrays, verified by `test_slope.py`. | **WORKING** |
 | **Terrain & Landslide ML Classifier** | `services/ml` | Supervised Random Forest model trained on 40 balanced samples (20 historical + 20 baseline controls), 5-fold CV ($100\%$ acc), and `/api/ml/*` endpoints. | **WORKING** |
-| **Automated Test Suite** | `services/api/src/tests` & `services/ml/src/` | 50 automated tests (42 backend tests + 8 Python ML unit tests) covering validation, lifecycle, routing, risk scoring, and ML classifiers. | **WORKING** |
-| **Hazard-Aware Route Optimization** | `services/api` | Candidate-route optimization: profiles multiple GraphHopper candidate routes with the Step-6 risk engine and deterministically selects the safest route within a 1.35× detour cap (`POST /api/routes/optimize`). This is candidate selection, **not** GraphHopper edge-level hazard weighting. | **WORKING** (Step 8) |
-| **Dynamic Reroute Evaluation** | `services/api` | Evaluates whether the current route warrants rerouting against freshly profiled candidates and returns a deterministic recommended/not-recommended result (`POST /api/routes/reroute`). | **WORKING** (Step 8) |
-| **Mobile Field App** | `apps/mobile` | Offline-capable Leaflet mobile app for incident reporting and hazard alerts. | **PLANNED** (Step 9) |
+| **Hazard-Aware Route Optimization** | `services/api` | Candidate-route optimization: profiles multiple GraphHopper candidate routes with the Step-6 risk engine and deterministically selects the safest route within a 1.35× detour cap (`POST /api/routes/optimize`). GraphHopper edge weights are not modified. | **WORKING** (Step 8) |
+| **Dynamic Reroute Evaluation** | `services/api` | Evaluates whether the current route warrants rerouting against freshly profiled candidates and returns a deterministic recommendation (`POST /api/routes/reroute`). | **WORKING** (Step 8) |
+| **Road Accessibility Intelligence** | `services/api` | Road accessibility corridor tracking (`OPEN`, `RESTRICTED`, `CLOSED`) with PostGIS persistence, in-memory fallback, and closure-aware route candidate filtering (`/api/accessibility/*`). | **WORKING** (Step 9) |
+| **Active-Route Alert Engine** | `services/api` | Deterministic on-read generation of `ROAD_CLOSURE` (CRITICAL) and `ROAD_RESTRICTION` (WARNING) alerts from corridor states (`GET /api/alerts`). | **WORKING** (Step 9) |
+| **Interactive Map Dashboard** | `apps/web` | React + MapLibre GL JS rendering live hazard markers, vehicles, route LineStrings, accessibility corridor layers (green/amber/red), active alert HUD, and route optimization/reroute comparisons. | **WORKING** |
+| **Automated Test Suite** | `services/api/src/tests` & `services/ml/src/` | 107 automated backend tests (54 API integration + 13 routing optimization + 40 accessibility/alerts) + 8 Python ML unit tests covering validation, routing, risk scoring, ML inference, and accessibility. | **WORKING** |
+| **Mobile Field App** | `apps/mobile` | Offline-capable mobile app for field reporting and driver alerts. | **PLANNED** (Later step) |
 
 ---
 
-## 2. Conceptual Architecture Flow (Step 6 Milestone)
+## 2. Architecture & Data Flow
 
 ```mermaid
 graph TD
-    %% PostGIS & Data
+    %% Storage & Data Sources
     subgraph Data_Layer ["Data & Storage Layer (WORKING)"]
         PostGIS[(PostgreSQL + PostGIS)]
         OSMGraph[(OSM North-East Road Graph)]
         HistCatalog[(Curated Historical Landslides)]
+        InMemory[(In-Memory Authoritative Fallback)]
     end
 
-    %% External Feeds
+    %% External Services
     subgraph External_Feeds ["External Feeds"]
         OpenMeteo[Open-Meteo Weather API]
     end
 
-    %% Routing Engine
+    %% Local Routing Service
     subgraph Routing_Engine ["Local Routing Engine (WORKING)"]
         GH[GraphHopper 10.2 :8989]
     end
 
-    %% Backend Services
-    subgraph API_Services ["Node.js API Services (WORKING)"]
-        WeatherSvc[Normalized Weather Service]
+    %% API Backend Layer
+    subgraph API_Services ["Node.js Express API Services (WORKING)"]
+        WeatherSvc[Weather Service]
         IncidentSvc[Incident Domain Service]
         VehicleSvc[Vehicle Tracking Service]
-        RoutingSvc[Routing Service & GH Client]
-        RiskSvc[Multi-Factor Risk Intelligence Engine]
-        Validator[Input Validation Middleware]
+        AccessibilitySvc[Accessibility Service]
+        AlertSvc[Alert Service]
+        RoutingSvc[Routing & Optimization Service]
+        RiskSvc[Multi-Factor Risk Engine]
+        MLSvc[ML Prediction Service]
     end
 
-    %% Telemetry Simulation
-    subgraph Sim_Engine ["Simulation Engine (WORKING)"]
-        Waypoints[Generic Waypoint Arrays] --> SimScript[simulate-telematics.ts]
-    end
-
-    %% Frontend Web
-    subgraph Web_Client ["Web Operations & Risk View (WORKING)"]
-        MapLibre[MapLibre GL JS Map]
-        ThemeCfg[Centralized map-theme.ts]
-        RouteUI[Route Calculator & Risk Banner]
+    %% Frontend Web Client
+    subgraph Web_Client ["MapLibre Web Operations View (WORKING)"]
+        MapLibre[MapLibre GL JS Map Engine]
+        RouteUI[Route Optimization & Reroute Panel]
+        AlertHUD[Active Alerts Card]
+        AccLayers[Accessibility Vector Layers]
         HazardOverlay[Hazard Zones Layer]
-        Popup[Interactive Inspector Popups]
     end
 
     OpenMeteo --> WeatherSvc
     OSMGraph --> GH
     HistCatalog --> RiskSvc
-    PostGIS <--> IncidentSvc & VehicleSvc
+    PostGIS <--> IncidentSvc & VehicleSvc & AccessibilitySvc
+    InMemory <--> AccessibilitySvc & IncidentSvc & VehicleSvc
+
     WeatherSvc --> RiskSvc
     IncidentSvc --> RiskSvc
-    RoutingSvc --> GH
+    AccessibilitySvc --> AlertSvc
+    AccessibilitySvc --> RoutingSvc
+    RiskSvc --> RoutingSvc
+    MLSvc --> RoutingSvc
+    GH --> RoutingSvc
+
     RoutingSvc --> RouteUI
-    RiskSvc --> RouteUI & HazardOverlay
-    Validator --> IncidentSvc & VehicleSvc & WeatherSvc & RoutingSvc & RiskSvc
-    SimScript -->|POST /api/vehicles/:id/location| VehicleSvc
-    IncidentSvc -->|GeoJSON FeatureCollection| MapLibre
-    VehicleSvc -->|GeoJSON FeatureCollection| MapLibre
-    RoutingSvc -->|GeoJSON LineString| MapLibre
-    HazardOverlay --> MapLibre
-    ThemeCfg --> MapLibre
+    AlertSvc --> AlertHUD
+    AccessibilitySvc --> AccLayers
+    RiskSvc --> HazardOverlay
     RouteUI --> MapLibre
-    MapLibre --> Popup
+    AlertHUD --> MapLibre
+    AccLayers --> MapLibre
+    HazardOverlay --> MapLibre
 ```
+
+---
+
+## 3. Key Architectural Boundaries & Conventions
+
+1. **Routing & Optimization (Step 8 & 9):**
+   * GraphHopper generates alternative candidate road geometries (`algorithm=alternative_route`).
+   * SauraRoute does **not** dynamically modify GraphHopper edge weights or alter the OSM road graph at runtime.
+   * Accessibility filtering runs first: candidate paths intersecting `CLOSED` corridors within the 250m tolerance are pruned from selection if viable alternatives exist.
+   * Multi-factor risk evaluation ($[0, 100]$ score) and ML landslide susceptibility run on remaining eligible candidates.
+   * The deterministic selector chooses the safest route within the $1.35\times$ detour constraint and generates an explainable reason.
+
+2. **Road Accessibility & Proximity Detection (Step 9):**
+   * Corridors follow the lifecycle: `OPEN` $\leftrightarrow$ `RESTRICTED` $\leftrightarrow$ `CLOSED` (self-transitions prohibited).
+   * Geometric proximity is computed using a deterministic, dependency-free equirectangular point-to-segment distance algorithm with a 250m tolerance threshold.
+   * Alerts are derived on read from corridor state (`CLOSED` $\rightarrow$ `CRITICAL`, `RESTRICTED` $\rightarrow$ `WARNING`); no push messaging or notification queues are used.
+
+3. **Coordinate Standard:**
+   * All GeoJSON payloads strictly use RFC 7946 `[longitude, latitude]` array ordering.
+   * REST API request bodies accept named `{ latitude, longitude }` objects to prevent parameter transposition.

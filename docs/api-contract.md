@@ -80,7 +80,7 @@ This document outlines the REST API contracts and implementation statuses for th
 ## 5. Routing Engine (GraphHopper 10.2)
 
 ### `GET /api/routes`
-* **Status:** IMPLEMENTED (WORKING)
+* **Status:** IMPLEMENTED (WORKING — baseline route)
 * **Query Parameters:** `originLat`, `originLon`, `destinationLat`, `destinationLon`
 * **Response Structure:**
   ```json
@@ -160,7 +160,7 @@ This document outlines the REST API contracts and implementation statuses for th
 
 ---
 
-## 6. Machine Learning Classifiers (Step 7)
+## 7. Machine Learning Classifiers (Step 7)
 
 ### `GET /api/ml/predict`
 * **Status:** IMPLEMENTED (WORKING)
@@ -218,9 +218,18 @@ This document outlines the REST API contracts and implementation statuses for th
 
 ---
 
-## 7. Hazard-Aware Route Optimization (Step 8)
+## 8. Hazard-Aware Route Optimization & Accessibility Integration (Steps 8 & 9)
 
-Step 8 implements **candidate-route optimization** (Approach B). GraphHopper returns several alternative candidate routes for the same origin/destination; each candidate is profiled with the Step-6 risk engine, and a deterministic selector picks the safest route that stays within the configured detour budget. This is distinct from true GraphHopper edge-level hazard weighting — the graph's edge weights are not modified.
+SauraRoute implements **candidate-route optimization** (Approach B). GraphHopper returns alternative candidate routes for the requested origin and destination. In Step 9, candidate routes are first evaluated against registered road accessibility corridors:
+- Intersecting **`CLOSED`** corridors marks candidates ineligible (`isEligible: false`), pruning them from optimization if eligible alternatives exist.
+- Intersecting **`RESTRICTED`** corridors keeps candidates eligible (`isEligible: true`) while surfacing warning metadata.
+- If all candidates are closed, the engine returns a best-effort route marked `ALL_CANDIDATES_CLOSED` rather than falsely claiming no road geometry exists.
+
+Eligible candidates are then profiled with the Step-6 risk engine and Step-7 ML advisory predictions, and a deterministic selector picks the safest route that stays within the configured detour budget ($1.35\times$).
+
+> [!NOTE]
+> **Prototype Proximity Heuristic:** Corridor intersection detection currently uses a deterministic, dependency-free equirectangular point-to-segment distance algorithm with a configured tolerance of **250 meters** (`intersectionToleranceMeters`). This is a prototype geometric proximity heuristic, **not** lane-level, edge-level, or authoritative road-network graph closure enforcement.
+> GraphHopper edge weights are **not** dynamically modified at runtime.
 
 ### `POST /api/routes/optimize`
 * **Status:** IMPLEMENTED (WORKING)
@@ -234,7 +243,7 @@ Step 8 implements **candidate-route optimization** (Approach B). GraphHopper ret
   }
   ```
   * `origin` / `destination`: required coordinate objects (`latitude`, `longitude`).
-  * `routingPreference`: optional, one of `FASTEST` | `BALANCED` | `SAFEST` (defaults to `BALANCED` when omitted).
+  * `routingPreference`: optional, one of `FASTEST` | `BALANCED` | `SAFEST` (defaults to `BALANCED`).
   * `routingOptions`: optional (`profile`, `alternativeRoutes`, `maxPaths`, `customModel`).
 * **Response Structure** (`RouteOptimizationResult`):
   ```json
@@ -243,25 +252,64 @@ Step 8 implements **candidate-route optimization** (Approach B). GraphHopper ret
     "data": {
       "origin": { "latitude": 26.1445, "longitude": 91.7362 },
       "destination": { "latitude": 25.5788, "longitude": 91.8933 },
-      "selectedCandidateId": "candidate-1",
-      "selectedRoute": { "candidateId": "candidate-1", "name": "Candidate 1", "isBaseline": false, "distanceMeters": 98450, "durationSeconds": 7200, "geometry": { "type": "LineString", "coordinates": [] }, "instructions": [], "risk": { "overallLevel": "LOW", "meanScore": 20, "maxScore": 30, "hazardousSegmentCount": 0, "dominantTrigger": "None", "sampledWaypointsCount": 18 }, "compositeCost": 0.42, "normalizedCost": { "durationScore": 0.8, "distanceScore": 0.7, "hazardScore": 0.2, "totalCost": 0.42 } },
-      "baselineRoute": { "candidateId": "candidate-0", "name": "Candidate 0", "isBaseline": true, "distanceMeters": 95992, "durationSeconds": 5274, "geometry": { "type": "LineString", "coordinates": [] }, "instructions": [], "risk": { "overallLevel": "HIGH", "meanScore": 58, "maxScore": 72, "hazardousSegmentCount": 2, "dominantTrigger": "Steep Terrain", "sampledWaypointsCount": 18 }, "compositeCost": 0.8, "normalizedCost": { "durationScore": 1, "distanceScore": 1, "hazardScore": 0.66, "totalCost": 0.8 } },
-      "candidatesCount": 3,
+      "selectedCandidateId": "candidate_2",
+      "selectedRoute": {
+        "candidateId": "candidate_2",
+        "name": "Alternative Corridor 2",
+        "isBaseline": false,
+        "distanceMeters": 98450,
+        "durationSeconds": 7200,
+        "geometry": { "type": "LineString", "coordinates": [[91.7362, 26.1445], [91.8933, 25.5788]] },
+        "instructions": [],
+        "risk": { "overallLevel": "LOW", "meanScore": 20.0, "maxScore": 30.0, "hazardousSegmentCount": 0, "dominantTrigger": "None", "sampledWaypointsCount": 18, "waypoints": [] },
+        "compositeCost": 0.42,
+        "normalizedCost": { "durationScore": 0.8, "distanceScore": 0.7, "hazardScore": 0.2, "totalCost": 0.42 },
+        "accessibility": {
+          "status": "ACCESSIBLE",
+          "isEligible": true,
+          "affectedCorridors": []
+        }
+      },
+      "baselineRoute": {
+        "candidateId": "candidate_1",
+        "name": "Baseline Highway Route (Fastest)",
+        "isBaseline": true,
+        "distanceMeters": 95992,
+        "durationSeconds": 5274,
+        "geometry": { "type": "LineString", "coordinates": [[91.7362, 26.1445], [91.8933, 25.5788]] },
+        "instructions": [],
+        "risk": { "overallLevel": "HIGH", "meanScore": 58.0, "maxScore": 72.0, "hazardousSegmentCount": 2, "dominantTrigger": "Steep Terrain", "sampledWaypointsCount": 18, "waypoints": [] },
+        "compositeCost": 0.8,
+        "normalizedCost": { "durationScore": 1.0, "distanceScore": 1.0, "hazardScore": 0.66, "totalCost": 0.8 },
+        "accessibility": {
+          "status": "CLOSED",
+          "isEligible": false,
+          "affectedCorridors": [
+            { "id": "acc_01", "name": "GS Road Pass", "status": "CLOSED", "source": "NHAI" }
+          ],
+          "exclusionReason": "Candidate intersects one or more CLOSED corridors."
+        }
+      },
+      "candidatesCount": 2,
       "candidates": [],
       "preference": "BALANCED",
       "safetyIntelligence": { "status": "AVAILABLE" },
       "optimization": {
         "strategy": "SAFETY_OPTIMIZED",
-        "selectionReason": "Balanced route selected because it provided the best configured time-risk tradeoff within the allowed detour.",
-        "hazardReductionPercent": 32,
+        "selectionReason": "Safer route selected because it materially reduced hazard exposure while remaining within the allowed detour.",
+        "hazardReductionPercent": 32.0,
         "additionalDistanceKm": 2.5,
-        "additionalDurationMinutes": 8
+        "additionalDurationMinutes": 8.0
+      },
+      "accessibility": {
+        "status": "ACCESSIBLE",
+        "affectedCorridors": [
+          { "id": "acc_01", "name": "GS Road Pass", "status": "CLOSED", "source": "NHAI" }
+        ]
       }
     }
   }
   ```
-  * `candidates` is the full array of profiled `CandidateRouteProfile` objects; `selectedRoute` and `baselineRoute` are also present individually for convenience.
-  * `safetyIntelligence.status` is `DEGRADED` (with a `reason`) when any candidate's risk could not be fully evaluated; the selector then falls back to the fastest baseline honestly rather than fabricating risk.
 
 ### `POST /api/routes/reroute`
 * **Status:** IMPLEMENTED (WORKING)
@@ -275,30 +323,166 @@ Step 8 implements **candidate-route optimization** (Approach B). GraphHopper ret
       "destination": { "latitude": 25.5788, "longitude": 91.8933 },
       "distanceMeters": 95992,
       "durationSeconds": 5274,
-      "geometry": { "type": "LineString", "coordinates": [] },
+      "geometry": { "type": "LineString", "coordinates": [[91.7362, 26.1445], [91.8933, 25.5788]] },
       "instructions": []
     },
     "routingOptions": { "maxPaths": 3 }
   }
   ```
-  * `currentRoute` must include positive `distanceMeters` / `durationSeconds` and a `LineString` geometry with at least two coordinates.
 * **Response Structure** (`RerouteEvaluationResult`):
   ```json
   {
     "status": "success",
     "data": {
       "rerouteRecommended": true,
-      "reason": "Rerouting is recommended because the current route has a critical active-incident hazard and a safer detour is available.",
-      "currentRoute": { "riskLevel": "HIGH", "meanRiskScore": 58, "maxRiskScore": 72, "hazardousSegmentCount": 2 },
+      "reason": "Rerouting is recommended because a candidate provides the configured safety improvement within the allowed detour.",
+      "currentRoute": {
+        "riskLevel": "HIGH",
+        "meanRiskScore": 58.0,
+        "maxRiskScore": 72.0,
+        "hazardousSegmentCount": 2,
+        "accessibility": {
+          "status": "CLOSED",
+          "isEligible": false,
+          "affectedCorridors": []
+        }
+      },
       "safetyIntelligence": { "status": "AVAILABLE" },
-      "recommendedRoute": { "candidateId": "candidate-1", "name": "Candidate 1", "isBaseline": false, "distanceMeters": 101000, "durationSeconds": 7600, "geometry": { "type": "LineString", "coordinates": [] }, "instructions": [], "risk": { "overallLevel": "LOW", "meanScore": 20, "maxScore": 30, "hazardousSegmentCount": 0, "dominantTrigger": "None", "sampledWaypointsCount": 18 }, "compositeCost": 0.4, "normalizedCost": { "durationScore": 0.8, "distanceScore": 0.7, "hazardScore": 0.2, "totalCost": 0.4 } },
-      "metrics": { "hazardReductionPercent": 35, "additionalDistanceMeters": 5000, "additionalDurationSeconds": 600 },
-      "evaluatedCandidatesCount": 3
+      "recommendedRoute": {
+        "candidateId": "candidate_2",
+        "name": "Alternative Corridor 2",
+        "isBaseline": false,
+        "distanceMeters": 101000,
+        "durationSeconds": 7600,
+        "geometry": { "type": "LineString", "coordinates": [] },
+        "instructions": [],
+        "risk": { "overallLevel": "LOW", "meanScore": 20.0, "maxScore": 30.0, "hazardousSegmentCount": 0, "dominantTrigger": "None", "sampledWaypointsCount": 18, "waypoints": [] },
+        "compositeCost": 0.4,
+        "normalizedCost": { "durationScore": 0.8, "distanceScore": 0.7, "hazardScore": 0.2, "totalCost": 0.4 }
+      },
+      "metrics": {
+        "hazardReductionPercent": 35.0,
+        "additionalDistanceMeters": 5008,
+        "additionalDurationSeconds": 2326
+      },
+      "evaluatedCandidatesCount": 2,
+      "accessibility": {
+        "status": "ACCESSIBLE",
+        "affectedCorridors": []
+      }
     }
   }
   ```
-  * When rerouting is not warranted, `rerouteRecommended` is `false`, `reason` carries the backend explanation, and `recommendedRoute`/`metrics` are omitted.
 
-### `GET /api/routes` (backward-compatible)
-* **Status:** IMPLEMENTED (WORKING — unchanged)
-* Remains the existing baseline route endpoint (see Section 5). Step 8 adds the two endpoints above without altering `GET /api/routes` response shape or behavior.
+---
+
+## 9. Road Accessibility Intelligence & Corridor Management (Step 9)
+
+Corridors are tracked in PostGIS (table `road_accessibility`) with authoritative in-memory fallback. Corridors use GeoJSON `LineString` geometries in standard `[longitude, latitude]` order.
+
+### Status Vocabulary & Transitions
+* **`OPEN`**: Corridor is normally routable.
+* **`RESTRICTED`**: Corridor remains usable but flagged for operator awareness and potential candidate demotion.
+* **`CLOSED`**: Route candidates intersecting this corridor are disqualified from optimization when eligible alternatives exist.
+
+Allowed transitions (self-transitions are rejected):
+* `OPEN` $\rightarrow$ `RESTRICTED` | `CLOSED`
+* `RESTRICTED` $\rightarrow$ `OPEN` | `CLOSED`
+* `CLOSED` $\rightarrow$ `OPEN` | `RESTRICTED`
+
+### `GET /api/accessibility`
+* **Status:** IMPLEMENTED (WORKING)
+* **Response Structure:** GeoJSON `FeatureCollection`
+  ```json
+  {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [[91.8012, 25.9021], [91.8345, 25.8765]]
+        },
+        "properties": {
+          "id": "acc_01a2b3c4",
+          "name": "GS Road Nongpoh Corridor",
+          "roadCode": "NH-40",
+          "status": "CLOSED",
+          "reason": "Major landslide blockage near Nongpoh",
+          "source": "Meghalaya PWD",
+          "updatedAt": "2026-09-08T05:30:00.000Z"
+        }
+      }
+    ]
+  }
+  ```
+
+### `POST /api/accessibility`
+* **Status:** IMPLEMENTED (WORKING)
+* **Request Structure:**
+  ```json
+  {
+    "name": "NH-40 Nongpoh Section",
+    "road_code": "NH-40",
+    "status": "CLOSED",
+    "reason": "Landslide clearing in progress",
+    "source": "State Disaster Management Authority",
+    "geometry": {
+      "type": "LineString",
+      "coordinates": [
+        [91.8012, 25.9021],
+        [91.8345, 25.8765]
+      ]
+    }
+  }
+  ```
+* **Response:** HTTP 201 `{ "status": "success", "data": { "id": "acc_...", ... } }`
+
+### `PATCH /api/accessibility/:id/status`
+* **Status:** IMPLEMENTED (WORKING)
+* **Request Structure:**
+  ```json
+  {
+    "status": "RESTRICTED",
+    "reason": "Single lane opened for light vehicles"
+  }
+  ```
+* **Response:** HTTP 200 `{ "status": "success", "data": { ... } }` (or HTTP 400 on invalid transition / HTTP 404 if not found).
+
+### `DELETE /api/accessibility/:id`
+* **Status:** IMPLEMENTED (WORKING)
+* **Response:** HTTP 204 No Content (or HTTP 404 if corridor ID not found).
+
+---
+
+## 10. Active Alerts & Warnings (Step 9)
+
+Alerts are computed dynamically on read from active corridor states. No push notifications, SMS, or external messaging subsystems are used in this step.
+
+### `GET /api/alerts`
+* **Status:** IMPLEMENTED (WORKING)
+* **Generation Rules:**
+  * Corridors with status `CLOSED` map to category `ROAD_CLOSURE` and severity `CRITICAL`.
+  * Corridors with status `RESTRICTED` map to category `ROAD_RESTRICTION` and severity `WARNING`.
+  * Corridors with status `OPEN` produce **no** alerts.
+* **Response Structure:**
+  ```json
+  {
+    "status": "success",
+    "data": {
+      "items": [
+        {
+          "id": "accessibility-acc_01a2b3c4-closed",
+          "category": "ROAD_CLOSURE",
+          "severity": "CRITICAL",
+          "title": "Road closure: GS Road Nongpoh Corridor",
+          "message": "Major landslide blockage near Nongpoh",
+          "accessibilityCorridorId": "acc_01a2b3c4",
+          "accessibilityStatus": "CLOSED",
+          "created_at": "2026-09-08T05:30:00.000Z",
+          "updated_at": "2026-09-08T05:30:00.000Z"
+        }
+      ]
+    }
+  }
+  ```

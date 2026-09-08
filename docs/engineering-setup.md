@@ -68,9 +68,12 @@ GRAPHHOPPER_PROFILE=car
    npm run dev
    # Runs on http://localhost:3000
    ```
-2. Run automated test suite:
+2. Run automated test suites:
    ```bash
+   cd services/api
    npm test
+   npm run test:routing-optimization
+   npm run test:accessibility
    ```
 
 ### Service D: Vehicle Telemetry Simulator (`services/api`)
@@ -87,70 +90,89 @@ GRAPHHOPPER_PROFILE=car
    npm run dev
    # Access at http://localhost:5173
    ```
+2. Run web linter and production build:
+   ```bash
+   cd apps/web
+   npm run lint
+   npm run build
+   ```
 
 ### Service F: Python ML / Terrain Processing (`services/ml`)
-1. Activate virtual environment and run slope tests:
+1. Activate virtual environment and run tests:
    ```bash
    cd services/ml
    .\venv\Scripts\activate      # Windows (or source venv/bin/activate on Linux/macOS)
    python src/test_slope.py
+   python src/test_classifier.py
    ```
 
 ---
 
 ## 4. How to Verify Each Service
 
-### 1. Verify Real Routing Engine & API Pipeline
+### 1. Verify Real Routing Engine & Optimization (Steps 5 & 8)
 * **Health Check:** `GET http://localhost:8989/health` $\rightarrow$ `200 OK`
-* **Route Calculation (Guwahati → Shillong):**
-  ```bash
-  curl "http://localhost:3000/api/routes?originLat=26.1445&originLon=91.7362&destinationLat=25.5788&destinationLon=91.8933"
-  ```
+* **Baseline Route (Guwahati → Shillong):**
+   ```bash
+   curl "http://localhost:3000/api/routes?originLat=26.1445&originLon=91.7362&destinationLat=25.5788&destinationLon=91.8933"
+   ```
+* **Hazard-Aware Route Optimization:**
+   ```bash
+   curl -X POST "http://localhost:3000/api/routes/optimize" -H "Content-Type: application/json" -d "{\"origin\": {\"latitude\": 26.1445, \"longitude\": 91.7362}, \"destination\": {\"latitude\": 25.5788, \"longitude\": 91.8933}, \"routingPreference\": \"BALANCED\"}"
+   ```
+* **Dynamic Reroute Evaluation:**
+   ```bash
+   curl -X POST "http://localhost:3000/api/routes/reroute" -H "Content-Type: application/json" -d "{\"origin\": {\"latitude\": 26.1445, \"longitude\": 91.7362}, \"destination\": {\"latitude\": 25.5788, \"longitude\": 91.8933}, \"currentRoute\": {\"origin\": {\"latitude\": 26.1445, \"longitude\": 91.7362}, \"destination\": {\"latitude\": 25.5788, \"longitude\": 91.8933}, \"distanceMeters\": 95992, \"durationSeconds\": 5274, \"geometry\": {\"type\": \"LineString\", \"coordinates\": [[91.7362, 26.1445], [91.8933, 25.5788]]}, \"instructions\": []}}"
+   ```
 
 ### 2. Verify Risk Intelligence Foundation (Step 6)
 * **Point Risk Assessment:**
-  ```bash
-  curl "http://localhost:3000/api/risk/point?lat=25.9036&lon=91.8794"
-  ```
-  *Expected:* `200 OK`, `score` $[0, 100]$, `level` (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`), factor subscores for `rainfall`, `slope`, `activeIncidents`, and `historicalHotspots`.
+   ```bash
+   curl "http://localhost:3000/api/risk/point?lat=25.9036&lon=91.8794"
+   ```
 * **Corridor Route Risk Assessment:**
-  ```bash
-  curl -X POST "http://localhost:3000/api/risk/route" -H "Content-Type: application/json" -d "{\"coordinates\": [[91.7362, 26.1445], [91.7821, 25.9810], [91.8933, 25.5788]]}"
-  ```
+   ```bash
+   curl -X POST "http://localhost:3000/api/risk/route" -H "Content-Type: application/json" -d "{\"coordinates\": [[91.7362, 26.1445], [91.7821, 25.9810], [91.8933, 25.5788]]}"
+   ```
 * **Hazard Zones GeoJSON:**
-  ```bash
-  curl "http://localhost:3000/api/risk/zones"
-  ```
+   ```bash
+   curl "http://localhost:3000/api/risk/zones"
+   ```
 
-### 3. Verify Incidents & Vehicles
+### 3. Verify Road Accessibility & Active Alerts (Step 9)
+* **List Accessibility Corridors (GeoJSON):**
+   ```bash
+   curl "http://localhost:3000/api/accessibility"
+   ```
+* **Create Accessibility Corridor:**
+   ```bash
+   curl -X POST "http://localhost:3000/api/accessibility" -H "Content-Type: application/json" -d "{\"name\": \"NH-40 Test Corridor\", \"status\": \"CLOSED\", \"reason\": \"Landslide clearance\", \"source\": \"PWD\", \"geometry\": {\"type\": \"LineString\", \"coordinates\": [[91.8012, 25.9021], [91.8345, 25.8765]]}}"
+   ```
+* **Update Corridor Status:**
+   ```bash
+   curl -X PATCH "http://localhost:3000/api/accessibility/acc_01/status" -H "Content-Type: application/json" -d "{\"status\": \"RESTRICTED\", \"reason\": \"Single lane open\"}"
+   ```
+* **List Computed Alerts:**
+   ```bash
+   curl "http://localhost:3000/api/alerts"
+   ```
+
+### 4. Verify Incidents & Vehicles (Step 4)
 * **Weather Integration:** `GET http://localhost:3000/api/weather?lat=26.1445&lon=91.7362`
 * **List Incidents (GeoJSON):** `GET http://localhost:3000/api/incidents`
 * **List Vehicles (GeoJSON):** `GET http://localhost:3000/api/vehicles`
 
-### 4. Verify Web Application (MapLibre GL JS)
+### 5. Verify Machine Learning Classifiers (Step 7)
+* **ML API Prediction:**
+   ```bash
+   curl "http://localhost:3000/api/ml/predict?lat=25.9036&lon=91.8794"
+   curl "http://localhost:3000/api/ml/model"
+   ```
+
+### 6. Verify Web Application (MapLibre GL JS)
 1. Open `http://localhost:5173`.
 2. Inspect the map:
-   * **Basemap & Hazard Zones:** Purple markers indicating cataloged historical landslide events across the NER with toggle checkbox in legend.
-   * **Incidents & Fleet:** Active hazards and trucks moving live.
-   * **Route & Risk Calculation:** Select *"Guwahati → Shillong"* and press *"Calculate Route & Assess Risk"*.
-   * **Visuals:** Blue highway line renders on map, zooming to corridor, and displays Distance, Travel Time, and **Corridor Risk Level Banner** (`HIGH RISK (62/100) — Primary Trigger: Steep Terrain`).
-
-### 5. Verify Machine Learning Classifiers (Step 7)
-* **Run Python ML Tests:**
-  ```bash
-  python services/ml/src/test_classifier.py
-  python services/ml/src/test_slope.py
-  ```
-* **Train Random Forest Classifier:**
-  ```bash
-  python services/ml/src/train_classifier.py
-  ```
-* **Evaluate 5-Fold Stratified Metrics:**
-  ```bash
-  python services/ml/src/evaluate_model.py
-  ```
-* **ML API Prediction:**
-  ```bash
-  curl "http://localhost:3000/api/ml/predict?lat=25.9036&lon=91.8794"
-  curl "http://localhost:3000/api/ml/model"
-  ```
+   * **Accessibility Layers:** Green (OPEN), dashed amber (RESTRICTED), and thick red (CLOSED) corridor lines with interactive metadata popups.
+   * **Active Road Alerts:** HUD alert cards displaying CRITICAL road closures and WARNING restrictions.
+   * **Route Optimization:** Select origin/destination, choose preference (FASTEST / BALANCED / SAFEST), and review baseline vs selected route comparison and accessibility status.
+   * **Reroute Evaluation:** Dynamic evaluation of current route risk and corridor accessibility with recommendations.
