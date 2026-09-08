@@ -21,6 +21,13 @@ import {
   postMLPrediction,
   getMLModelInfo,
 } from '../controllers/ml.controller.js';
+import {
+  createAccessibility,
+  deleteAccessibility,
+  listAccessibility,
+  updateAccessibilityStatus,
+} from '../controllers/accessibility.controller.js';
+import { listAlerts } from '../controllers/alert.controller.js';
 
 const router = Router();
 
@@ -38,6 +45,15 @@ router.patch('/incidents/:id/status', updateIncidentStatus);
 // Vehicles
 router.get('/vehicles', listVehicles);
 router.post('/vehicles/:id/location', updateVehicleLocation);
+
+// Road accessibility
+router.get('/accessibility', listAccessibility);
+router.post('/accessibility', createAccessibility);
+router.patch('/accessibility/:id/status', updateAccessibilityStatus);
+router.delete('/accessibility/:id', deleteAccessibility);
+
+// Current computed accessibility alerts
+router.get('/alerts', listAlerts);
 
 // Routing
 router.get('/routes', getRoute);

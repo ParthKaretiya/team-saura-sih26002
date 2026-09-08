@@ -19,10 +19,19 @@ import { GraphHopperClient, RoutingEngineError } from '../services/graphhopper.c
 import { RoutingService, routingService } from '../services/routing.service.js';
 import { riskService, calculateHaversineDistanceKm } from '../services/risk.service.js';
 import { mlService } from '../services/ml.service.js';
+import { accessibilityService } from '../services/accessibility.service.js';
+import { alertService } from '../services/alert.service.js';
 import { classifyRiskLevel } from '../config/risk.config.js';
 import { IncidentStatus } from '../types/incident.types.js';
 import type { RerouteEvaluationResult, RouteOptimizationResult, RouteResponse } from '../types/routing.types.js';
 import { getRoute, optimizeRoute, rerouteRoute } from '../controllers/route.controller.js';
+import {
+  createAccessibility,
+  deleteAccessibility,
+  listAccessibility,
+  updateAccessibilityStatus,
+} from '../controllers/accessibility.controller.js';
+import { listAlerts } from '../controllers/alert.controller.js';
 
 let passed = 0;
 let failed = 0;
@@ -48,6 +57,7 @@ function createControllerResponse(): {
   payload: unknown;
   status: (code: number) => unknown;
   json: (payload: unknown) => unknown;
+  send: () => unknown;
 } {
   const response = {
     statusCode: 200,
@@ -58,6 +68,9 @@ function createControllerResponse(): {
     },
     json(payload: unknown) {
       this.payload = payload;
+      return this;
+    },
+    send() {
       return this;
     },
   };
@@ -229,7 +242,120 @@ async function runTests() {
     assert.strictEqual(updated.status, 'REJECTED');
   });
 
-  console.log('\n--- 3. Vehicle Service & Tracking ---');
+  console.log('\n--- 3. Accessibility API & Alerts ---');
+
+  const accessibilityGeometry = {
+    type: 'LineString' as const,
+    coordinates: [[93.70, 27.10], [93.90, 26.60]] as [number, number][],
+  };
+
+  await test('POST and GET /api/accessibility create and expose GeoJSON corridor properties', async () => {
+    const createResponse = createControllerResponse();
+    await createAccessibility(
+      { body: { name: 'API Closed Corridor', status: 'CLOSED', reason: 'landslide', source: 'api-test', geometry: accessibilityGeometry } } as any,
+      createResponse as any,
+      rethrowNext,
+    );
+    assert.strictEqual(createResponse.statusCode, 201);
+    const created = (createResponse.payload as { data: { id: string; status: string } }).data;
+    assert.strictEqual(created.status, 'CLOSED');
+
+    const listResponse = createControllerResponse();
+    await listAccessibility({} as any, listResponse as any, rethrowNext);
+    const collection = listResponse.payload as { type: string; features: Array<{ properties: { id: string; status: string; reason?: string; source: string } }> };
+    const feature = collection.features.find((item) => item.properties.id === created.id);
+    assert.ok(feature);
+    assert.strictEqual(feature.properties.status, 'CLOSED');
+    assert.strictEqual(feature.properties.reason, 'landslide');
+    assert.strictEqual(feature.properties.source, 'api-test');
+  });
+
+  await test('PATCH /api/accessibility/:id/status validates transitions and reports unknown IDs', async () => {
+    const record = await accessibilityService.createAccessibility({
+      name: 'API Transition Corridor', status: 'OPEN', source: 'api-test', geometry: accessibilityGeometry,
+    });
+    const updateResponse = createControllerResponse();
+    await updateAccessibilityStatus(
+      { params: { id: record.id }, body: { status: 'CLOSED', reason: 'washout' } } as any,
+      updateResponse as any,
+      rethrowNext,
+    );
+    assert.strictEqual(updateResponse.statusCode, 200);
+    assert.strictEqual((updateResponse.payload as { data: { status: string } }).data.status, 'CLOSED');
+
+    const invalidTransitionResponse = createControllerResponse();
+    await updateAccessibilityStatus(
+      { params: { id: record.id }, body: { status: 'CLOSED' } } as any,
+      invalidTransitionResponse as any,
+      rethrowNext,
+    );
+    assert.strictEqual(invalidTransitionResponse.statusCode, 400);
+
+    const unknownResponse = createControllerResponse();
+    await updateAccessibilityStatus(
+      { params: { id: 'acc_unknown' }, body: { status: 'OPEN' } } as any,
+      unknownResponse as any,
+      rethrowNext,
+    );
+    assert.strictEqual(unknownResponse.statusCode, 404);
+  });
+
+  await test('accessibility API rejects invalid statuses, malformed geometry, and malformed IDs', async () => {
+    const invalidStatusResponse = createControllerResponse();
+    await createAccessibility(
+      { body: { name: 'Bad status', status: 'BROKEN', source: 'api-test', geometry: accessibilityGeometry } } as any,
+      invalidStatusResponse as any,
+      rethrowNext,
+    );
+    assert.strictEqual(invalidStatusResponse.statusCode, 400);
+
+    const malformedGeometryResponse = createControllerResponse();
+    await createAccessibility(
+      { body: { name: 'Bad geometry', status: 'OPEN', source: 'api-test', geometry: { type: 'Point', coordinates: [91.7, 26.1] } } } as any,
+      malformedGeometryResponse as any,
+      rethrowNext,
+    );
+    assert.strictEqual(malformedGeometryResponse.statusCode, 400);
+
+    const malformedIdResponse = createControllerResponse();
+    await updateAccessibilityStatus(
+      { params: { id: 'bad/id' }, body: { status: 'OPEN' } } as any,
+      malformedIdResponse as any,
+      rethrowNext,
+    );
+    assert.strictEqual(malformedIdResponse.statusCode, 400);
+  });
+
+  await test('GET /api/alerts maps CLOSED and RESTRICTED corridors deterministically and omits OPEN', async () => {
+    const restricted = await accessibilityService.createAccessibility({
+      name: 'API Restricted Corridor', status: 'RESTRICTED', reason: 'single lane', source: 'api-test', geometry: accessibilityGeometry,
+    });
+    const open = await accessibilityService.createAccessibility({
+      name: 'API Open Corridor', status: 'OPEN', source: 'api-test', geometry: accessibilityGeometry,
+    });
+    const first = await alertService.listAlerts();
+    const second = await alertService.listAlerts();
+    assert.deepStrictEqual(first, second);
+    assert.ok(first.items.some((alert) => alert.category === 'ROAD_CLOSURE' && alert.severity === 'CRITICAL'));
+    assert.ok(first.items.some((alert) => alert.accessibilityCorridorId === restricted.id && alert.category === 'ROAD_RESTRICTION' && alert.severity === 'WARNING'));
+    assert.ok(!first.items.some((alert) => alert.accessibilityCorridorId === open.id));
+
+    const response = createControllerResponse();
+    await listAlerts({} as any, response as any, rethrowNext);
+    assert.deepStrictEqual(response.payload, { status: 'success', data: first });
+  });
+
+  await test('DELETE /api/accessibility/:id removes an existing corridor', async () => {
+    const record = await accessibilityService.createAccessibility({
+      name: 'API Deletable Corridor', status: 'OPEN', source: 'api-test', geometry: accessibilityGeometry,
+    });
+    const response = createControllerResponse();
+    await deleteAccessibility({ params: { id: record.id } } as any, response as any, rethrowNext);
+    assert.strictEqual(response.statusCode, 204);
+    assert.strictEqual(await accessibilityService.getAccessibilityById(record.id), null);
+  });
+
+  console.log('\n--- 4. Vehicle Service & Tracking ---');
 
   await test('VehicleService lists seeded vehicles in GeoJSON format', async () => {
     const geoJson = await vehicleService.listVehicles();
@@ -427,6 +553,26 @@ async function runTests() {
     }
   });
 
+  await test('POST /api/routes/optimize preserves accessibility details from routing', async () => {
+    const originalOptimizeRoute = routingService.optimizeRoute;
+    const response = createControllerResponse();
+    const result = {
+      ...optimizationFixture(),
+      accessibility: { status: 'RESTRICTED' as const, affectedCorridors: [] },
+    };
+    try {
+      routingService.optimizeRoute = async () => result;
+      await optimizeRoute(
+        { body: { origin: routeFixture.origin, destination: routeFixture.destination } } as any,
+        response as any,
+        rethrowNext,
+      );
+      assert.deepStrictEqual(response.payload, { status: 'success', data: result });
+    } finally {
+      routingService.optimizeRoute = originalOptimizeRoute;
+    }
+  });
+
   await test('POST /api/routes/optimize rejects invalid preferences without invoking routing', async () => {
     const response = createControllerResponse();
     await optimizeRoute(
@@ -477,6 +623,33 @@ async function runTests() {
       currentRoute: { riskLevel: 'HIGH', meanRiskScore: Number.NaN, maxRiskScore: Number.NaN, hazardousSegmentCount: 0 },
       evaluatedCandidatesCount: 1,
       safetyIntelligence: { status: 'DEGRADED', reason: 'One or more route risk assessments were incomplete.' },
+    };
+    try {
+      routingService.evaluateRerouteForRoute = async () => evaluation;
+      await rerouteRoute(
+        { body: { origin: routeFixture.origin, destination: routeFixture.destination, currentRoute: routeFixture } } as any,
+        response as any,
+        rethrowNext,
+      );
+      assert.deepStrictEqual(response.payload, { status: 'success', data: evaluation });
+    } finally {
+      routingService.evaluateRerouteForRoute = originalEvaluateReroute;
+    }
+  });
+
+  await test('POST /api/routes/reroute preserves accessibility details from routing', async () => {
+    const originalEvaluateReroute = routingService.evaluateRerouteForRoute;
+    const response = createControllerResponse();
+    const evaluation: RerouteEvaluationResult = {
+      rerouteRecommended: false,
+      reason: 'No closure-free alternative was found.',
+      currentRoute: {
+        riskLevel: 'HIGH', meanRiskScore: 60, maxRiskScore: 70, hazardousSegmentCount: 1,
+        accessibility: { status: 'CLOSED', isEligible: false, affectedCorridors: [], exclusionReason: 'Closed corridor.' },
+      },
+      evaluatedCandidatesCount: 1,
+      safetyIntelligence: { status: 'AVAILABLE' },
+      accessibility: { status: 'ALL_CANDIDATES_CLOSED', affectedCorridors: [], reason: 'No closure-free alternative was found.' },
     };
     try {
       routingService.evaluateRerouteForRoute = async () => evaluation;
