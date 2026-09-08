@@ -94,3 +94,73 @@ export interface HazardZoneFeatureCollection {
   type: 'FeatureCollection';
   features: HazardZoneFeature[];
 }
+
+export type RoutingPreference = 'FASTEST' | 'BALANCED' | 'SAFEST';
+
+export interface CandidateRouteProfile {
+  candidateId: string;
+  name: string;
+  isBaseline: boolean;
+  distanceMeters: number;
+  durationSeconds: number;
+  geometry: RouteResponse['geometry'];
+  instructions: RouteNavigationInstruction[];
+  risk: RouteRiskSummary;
+  mlSummary?: {
+    maxProbability: number;
+    meanProbability: number;
+    riskTier: RiskLevel;
+    prediction: 'LANDSLIDE_RISK' | 'NO_HAZARD';
+  };
+  compositeCost: number;
+  normalizedCost: {
+    durationScore: number;
+    distanceScore: number;
+    hazardScore: number;
+    totalCost: number;
+  };
+}
+
+export interface RouteOptimizationResult {
+  origin: { latitude: number; longitude: number };
+  destination: { latitude: number; longitude: number };
+  selectedCandidateId: string;
+  selectedRoute: CandidateRouteProfile;
+  baselineRoute: CandidateRouteProfile;
+  candidatesCount: number;
+  candidates: CandidateRouteProfile[];
+  preference: RoutingPreference;
+  safetyIntelligence: {
+    status: 'AVAILABLE' | 'DEGRADED';
+    reason?: string;
+  };
+  optimization: {
+    strategy: 'SAFETY_OPTIMIZED' | 'SPEED_BASELINE';
+    selectionReason: string;
+    hazardReductionPercent: number;
+    additionalDistanceKm: number;
+    additionalDurationMinutes: number;
+  };
+}
+
+export interface RerouteEvaluationResult {
+  rerouteRecommended: boolean;
+  reason: string;
+  currentRoute: {
+    riskLevel: RiskLevel;
+    meanRiskScore: number;
+    maxRiskScore: number;
+    hazardousSegmentCount: number;
+  };
+  safetyIntelligence: {
+    status: 'AVAILABLE' | 'DEGRADED';
+    reason?: string;
+  };
+  recommendedRoute?: CandidateRouteProfile;
+  metrics?: {
+    hazardReductionPercent: number;
+    additionalDistanceMeters: number;
+    additionalDurationSeconds: number;
+  };
+  evaluatedCandidatesCount: number;
+}

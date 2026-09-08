@@ -60,6 +60,20 @@ export const ROUTE_THEME = {
   lineOpacity: 0.9,
 };
 
+export const BASELINE_ROUTE_THEME = {
+  lineColor: '#9CA3AF', // Gray
+  casingColor: '#6B7280',
+  lineWidth: 3,
+  lineOpacity: 0.85,
+};
+
+export const SELECTED_ROUTE_THEME = {
+  lineColor: '#059669', // Emerald
+  casingColor: '#065F46',
+  lineWidth: 5,
+  lineOpacity: 0.95,
+};
+
 export const HAZARD_ZONE_THEME = {
   color: '#8B5CF6', // Purple
   radius: 8,

@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { SEVERITY_THEME, ROUTE_THEME, RISK_LEVEL_THEME, HAZARD_ZONE_THEME } from '../config/map-theme';
+import {
+  SEVERITY_THEME,
+  ROUTE_THEME,
+  HAZARD_ZONE_THEME,
+  BASELINE_ROUTE_THEME,
+  SELECTED_ROUTE_THEME,
+} from '../config/map-theme';
 import type {
   IncidentFeatureCollection,
   VehicleFeatureCollection,
   RouteResponse,
-  RouteRiskSummary,
   HazardZoneFeatureCollection,
+  RoutingPreference,
+  RouteOptimizationResult,
+  RerouteEvaluationResult,
 } from '../types/api';
 
 const API_BASE_URL = 'http://localhost:3000/api';
@@ -73,9 +81,16 @@ export default function Map() {
   const [originInput, setOriginInput] = useState<string>('26.1445, 91.7362');
   const [destInput, setDestInput] = useState<string>('25.5788, 91.8933');
   const [calculatedRoute, setCalculatedRoute] = useState<RouteResponse | null>(null);
-  const [routeRisk, setRouteRisk] = useState<RouteRiskSummary | null>(null);
   const [isRouting, setIsRouting] = useState<boolean>(false);
   const [routingError, setRoutingError] = useState<string | null>(null);
+
+  // Route Optimization & Rerouting State
+  const [preference, setPreference] = useState<RoutingPreference>('BALANCED');
+  const [optimization, setOptimization] = useState<RouteOptimizationResult | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
+  const [rerouteResult, setRerouteResult] = useState<RerouteEvaluationResult | null>(null);
+  const [isCheckingReroute, setIsCheckingReroute] = useState<boolean>(false);
+  const [rerouteError, setRerouteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -127,6 +142,78 @@ export default function Map() {
             'line-color': ROUTE_THEME.lineColor,
             'line-width': ROUTE_THEME.lineWidth,
             'line-opacity': ROUTE_THEME.lineOpacity,
+          },
+        });
+      }
+
+      // 1b. Baseline Route Layer (comparison)
+      if (!map.getSource('baseline-route-source')) {
+        map.addSource('baseline-route-source', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: [] },
+            properties: {},
+          },
+        });
+
+        map.addLayer({
+          id: 'baseline-route-casing',
+          type: 'line',
+          source: 'baseline-route-source',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': BASELINE_ROUTE_THEME.casingColor,
+            'line-width': BASELINE_ROUTE_THEME.lineWidth + 3,
+            'line-opacity': BASELINE_ROUTE_THEME.lineOpacity,
+          },
+        });
+
+        map.addLayer({
+          id: 'baseline-route-line',
+          type: 'line',
+          source: 'baseline-route-source',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': BASELINE_ROUTE_THEME.lineColor,
+            'line-width': BASELINE_ROUTE_THEME.lineWidth,
+            'line-opacity': BASELINE_ROUTE_THEME.lineOpacity,
+          },
+        });
+      }
+
+      // 1c. Selected/Optimized Route Layer (emphasized)
+      if (!map.getSource('selected-route-source')) {
+        map.addSource('selected-route-source', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: [] },
+            properties: {},
+          },
+        });
+
+        map.addLayer({
+          id: 'selected-route-casing',
+          type: 'line',
+          source: 'selected-route-source',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': SELECTED_ROUTE_THEME.casingColor,
+            'line-width': SELECTED_ROUTE_THEME.lineWidth + 3,
+            'line-opacity': SELECTED_ROUTE_THEME.lineOpacity,
+          },
+        });
+
+        map.addLayer({
+          id: 'selected-route-line',
+          type: 'line',
+          source: 'selected-route-source',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': SELECTED_ROUTE_THEME.lineColor,
+            'line-width': SELECTED_ROUTE_THEME.lineWidth,
+            'line-opacity': SELECTED_ROUTE_THEME.lineOpacity,
           },
         });
       }
@@ -379,13 +466,13 @@ export default function Map() {
     }
   }, [showHazardZones]);
 
-  // Handle Route Calculation and Corridor Risk Assessment
+  // Handle Route Calculation via Optimization API
   const handleCalculateRoute = async (customOrigin?: string, customDest?: string) => {
     const origStr = customOrigin || originInput;
     const destStr = customDest || destInput;
     setRoutingError(null);
     setIsRouting(true);
-    setRouteRisk(null);
+    setIsOptimizing(true);
 
     const origParts = origStr.split(',').map((s) => parseFloat(s.trim()));
     const destParts = destStr.split(',').map((s) => parseFloat(s.trim()));
@@ -400,6 +487,7 @@ export default function Map() {
     ) {
       setRoutingError('Please provide coordinates in format: latitude, longitude');
       setIsRouting(false);
+      setIsOptimizing(false);
       return;
     }
 
@@ -407,33 +495,60 @@ export default function Map() {
     const [destinationLat, destinationLon] = destParts;
 
     try {
-      // 1. Calculate Road Geometry via Routing API
-      const url = `${API_BASE_URL}/routes?originLat=${originLat}&originLon=${originLon}&destinationLat=${destinationLat}&destinationLon=${destinationLon}`;
-      const res = await fetch(url);
+      const res = await fetch(`${API_BASE_URL}/routes/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: { latitude: originLat, longitude: originLon },
+          destination: { latitude: destinationLat, longitude: destinationLon },
+          routingPreference: preference,
+        }),
+      });
       const json = await res.json();
 
       if (!res.ok) {
         setRoutingError(json.message || `Routing failed: HTTP ${res.status}`);
         setIsRouting(false);
+        setIsOptimizing(false);
         return;
       }
 
-      const routeData = json.data as RouteResponse;
-      setCalculatedRoute(routeData);
+      const result = json.data as RouteOptimizationResult;
+      setOptimization(result);
+
+      const selected = result.selectedRoute;
+      const baseline = result.baselineRoute;
+      setCalculatedRoute({
+        origin: result.origin,
+        destination: result.destination,
+        distanceMeters: selected.distanceMeters,
+        durationSeconds: selected.durationSeconds,
+        geometry: selected.geometry,
+        instructions: selected.instructions,
+      });
 
       if (mapRef.current) {
         const map = mapRef.current;
-        const routeSrc = map.getSource('route-source') as maplibregl.GeoJSONSource;
-        if (routeSrc) {
-          routeSrc.setData({
+
+        const selectedSrc = map.getSource('selected-route-source') as maplibregl.GeoJSONSource;
+        if (selectedSrc) {
+          selectedSrc.setData({
             type: 'Feature',
-            geometry: routeData.geometry,
+            geometry: selected.geometry,
             properties: {},
           });
         }
 
-        // Fit bounds to route
-        const coords = routeData.geometry.coordinates;
+        const baselineSrc = map.getSource('baseline-route-source') as maplibregl.GeoJSONSource;
+        if (baselineSrc) {
+          baselineSrc.setData({
+            type: 'Feature',
+            geometry: baseline.geometry,
+            properties: {},
+          });
+        }
+
+        const coords = selected.geometry.coordinates;
         if (coords.length > 0) {
           const bounds = coords.reduce(
             (b, c) => b.extend(c as [number, number]),
@@ -442,25 +557,56 @@ export default function Map() {
           map.fitBounds(bounds, { padding: 60, duration: 1000 });
         }
       }
-
-      // 2. Evaluate Corridor Risk Profile via Risk Engine API
-      try {
-        const riskRes = await fetch(`${API_BASE_URL}/risk/route`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ coordinates: routeData.geometry.coordinates }),
-        });
-        if (riskRes.ok) {
-          const riskJson = await riskRes.json();
-          setRouteRisk(riskJson.data as RouteRiskSummary);
-        }
-      } catch (riskErr) {
-        console.warn('Corridor risk evaluation error:', riskErr);
-      }
     } catch (err) {
       setRoutingError(`Network error: ${(err as Error).message}`);
     } finally {
       setIsRouting(false);
+      setIsOptimizing(false);
+    }
+  };
+
+  const handleCheckReroute = async () => {
+    if (!calculatedRoute || !optimization) {
+      setRerouteError('Calculate a route before checking for a safer reroute.');
+      return;
+    }
+
+    setRerouteError(null);
+    setRerouteResult(null);
+    setIsCheckingReroute(true);
+
+    const currentRoute: RouteResponse = {
+      origin: optimization.origin,
+      destination: optimization.destination,
+      distanceMeters: calculatedRoute.distanceMeters,
+      durationSeconds: calculatedRoute.durationSeconds,
+      geometry: calculatedRoute.geometry,
+      instructions: calculatedRoute.instructions,
+    };
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/routes/reroute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: optimization.origin,
+          destination: optimization.destination,
+          currentRoute,
+        }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        setRerouteError(json.message || `Reroute evaluation failed: HTTP ${res.status}`);
+        return;
+      }
+
+      const result = json.data as RerouteEvaluationResult;
+      setRerouteResult(result);
+    } catch (err) {
+      setRerouteError(`Reroute network error: ${(err as Error).message}`);
+    } finally {
+      setIsCheckingReroute(false);
     }
   };
 
@@ -676,6 +822,36 @@ export default function Map() {
           </div>
         </div>
 
+        {/* Routing Preference Control */}
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: '#4B5563', display: 'block', marginBottom: 4 }}>
+            Routing Preference:
+          </label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {(['FASTEST', 'BALANCED', 'SAFEST'] as RoutingPreference[]).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setPreference(mode)}
+                disabled={isRouting}
+                style={{
+                  flex: 1,
+                  padding: '5px 4px',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  borderRadius: 4,
+                  cursor: isRouting ? 'not-allowed' : 'pointer',
+                  border: '1px solid',
+                  backgroundColor: preference === mode ? '#2563EB' : '#FFFFFF',
+                  color: preference === mode ? '#FFFFFF' : '#4B5563',
+                  borderColor: preference === mode ? '#2563EB' : '#D1D5DB',
+                }}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Calculate Button */}
         <button
           onClick={() => handleCalculateRoute()}
@@ -693,7 +869,7 @@ export default function Map() {
             transition: 'background-color 0.2s',
           }}
         >
-          {isRouting ? 'Evaluating Route & Risk...' : 'Calculate Route & Assess Risk'}
+          {isOptimizing ? 'Optimizing Route...' : 'Calculate Optimized Route'}
         </button>
 
         {/* Error Display */}
@@ -713,8 +889,8 @@ export default function Map() {
           </div>
         )}
 
-        {/* Route Metrics & Risk Summary */}
-        {calculatedRoute && (
+        {/* Optimization Summary */}
+        {optimization && (
           <div
             style={{
               marginTop: 10,
@@ -724,61 +900,189 @@ export default function Map() {
               border: '1px solid #E2E8F0',
             }}
           >
-            {/* Route Stats */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>Highway Distance:</span>
-              <strong style={{ fontSize: 13, color: '#0F172A' }}>
-                {(calculatedRoute.distanceMeters / 1000).toFixed(1)} km
-              </strong>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>Estimated Travel Time:</span>
-              <strong style={{ fontSize: 13, color: '#0F172A' }}>
-                {Math.floor(calculatedRoute.durationSeconds / 3600) > 0
-                  ? `${Math.floor(calculatedRoute.durationSeconds / 3600)}h ${Math.round(
-                      (calculatedRoute.durationSeconds % 3600) / 60
-                    )}m`
-                  : `${Math.round(calculatedRoute.durationSeconds / 60)} min`}
-              </strong>
-            </div>
-
-            {/* Risk Intelligence Banner */}
-            {routeRisk && (
-              <div
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>Optimization Summary</span>
+              <span
                 style={{
-                  marginTop: 8,
-                  padding: '8px 10px',
-                  backgroundColor: RISK_LEVEL_THEME[routeRisk.overallLevel]?.bg || '#F3F4F6',
-                  borderRadius: 6,
-                  border: `1px solid ${RISK_LEVEL_THEME[routeRisk.overallLevel]?.color || '#9CA3AF'}`,
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  color: '#FFFFFF',
+                  backgroundColor: optimization.optimization.strategy === 'SAFETY_OPTIMIZED' ? '#059669' : '#6B7280',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: RISK_LEVEL_THEME[routeRisk.overallLevel]?.text }}>
-                    CORRIDOR RISK LEVEL:
+                {optimization.preference} · {optimization.optimization.strategy === 'SAFETY_OPTIMIZED' ? 'SAFER' : 'BASELINE'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ fontSize: 11, color: '#6B7280' }}>Baseline (Fastest):</span>
+              <strong style={{ fontSize: 12, color: '#374151' }}>
+                {(optimization.baselineRoute.distanceMeters / 1000).toFixed(1)} km · {Math.round(optimization.baselineRoute.durationSeconds / 60)} min
+              </strong>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>Selected:</span>
+              <strong style={{ fontSize: 12, color: '#059669' }}>
+                {(optimization.selectedRoute.distanceMeters / 1000).toFixed(1)} km · {Math.round(optimization.selectedRoute.durationSeconds / 60)} min
+              </strong>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ fontSize: 11, color: '#6B7280' }}>Detour:</span>
+              <strong style={{ fontSize: 12, color: '#374151' }}>
+                +{optimization.optimization.additionalDistanceKm.toFixed(1)} km · +{optimization.optimization.additionalDurationMinutes.toFixed(0)} min
+              </strong>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ fontSize: 11, color: '#6B7280' }}>Hazard (Baseline → Selected):</span>
+              <strong style={{ fontSize: 12, color: '#374151' }}>
+                {optimization.baselineRoute.risk.overallLevel} ({optimization.baselineRoute.risk.meanScore}) → {optimization.selectedRoute.risk.overallLevel} ({optimization.selectedRoute.risk.meanScore})
+              </strong>
+            </div>
+
+            {optimization.optimization.hazardReductionPercent > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>Risk improvement:</span>
+                <strong style={{ fontSize: 12, color: '#059669' }}>
+                  -{optimization.optimization.hazardReductionPercent}% hazard
+                </strong>
+              </div>
+            )}
+
+            <div style={{ fontSize: 10, color: '#6B7280', marginTop: 6, paddingTop: 6, borderTop: '1px dashed #E5E7EB' }}>
+              <strong>Why:</strong> {optimization.optimization.selectionReason}
+            </div>
+
+            {optimization.safetyIntelligence.status === 'DEGRADED' && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: '6px 8px',
+                  backgroundColor: '#FEF3C7',
+                  color: '#92400E',
+                  fontSize: 11,
+                  borderRadius: 4,
+                  border: '1px solid #FDE68A',
+                }}
+              >
+                ⚠️ Degraded safety data: {optimization.safetyIntelligence.reason || 'risk information is incomplete.'}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Candidate Comparison */}
+        {optimization && optimization.candidates.length > 1 && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: '8px 10px',
+              backgroundColor: '#FFFFFF',
+              borderRadius: 6,
+              border: '1px solid #E5E7EB',
+              maxHeight: 140,
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Candidate Routes
+            </div>
+            {optimization.candidates.map((c) => {
+              const isSelected = c.candidateId === optimization.selectedCandidateId;
+              const isBaseline = c.isBaseline;
+              return (
+                <div
+                  key={c.candidateId}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: 10,
+                    padding: '3px 0',
+                    borderBottom: '1px solid #F3F4F6',
+                    color: isSelected ? '#059669' : '#6B7280',
+                  }}
+                >
+                  <span style={{ fontWeight: isSelected ? 700 : 500 }}>
+                    {c.name || c.candidateId}
+                    {isBaseline ? ' (Baseline)' : ''}
+                    {isSelected ? ' ✓' : ''}
                   </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      color: '#FFFFFF',
-                      backgroundColor: RISK_LEVEL_THEME[routeRisk.overallLevel]?.color,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                    }}
-                  >
-                    {routeRisk.overallLevel} ({routeRisk.meanScore}/100)
+                  <span>
+                    {(c.distanceMeters / 1000).toFixed(1)} km · {c.risk.overallLevel} ({c.risk.meanScore})
                   </span>
                 </div>
+              );
+            })}
+          </div>
+        )}
 
-                <div style={{ fontSize: 11, color: RISK_LEVEL_THEME[routeRisk.overallLevel]?.text }}>
-                  Primary Trigger: <strong>{routeRisk.dominantTrigger}</strong>
+        {/* Reroute Intelligence */}
+        {optimization && (
+          <div style={{ marginTop: 8 }}>
+            <button
+              onClick={handleCheckReroute}
+              disabled={isCheckingReroute}
+              style={{
+                width: '100%',
+                padding: '7px',
+                backgroundColor: isCheckingReroute ? '#A7F3D0' : '#059669',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 6,
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: isCheckingReroute ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isCheckingReroute ? 'Checking for safer reroute...' : 'Check for Safer Reroute'}
+            </button>
+
+            {rerouteError && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: '6px 8px',
+                  backgroundColor: '#FEE2E2',
+                  color: '#DC2626',
+                  fontSize: 11,
+                  borderRadius: 4,
+                  border: '1px solid #FCA5A5',
+                }}
+              >
+                {rerouteError}
+              </div>
+            )}
+
+            {rerouteResult && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  border: `1px solid ${rerouteResult.rerouteRecommended ? '#6EE7B7' : '#E5E7EB'}`,
+                  backgroundColor: rerouteResult.rerouteRecommended ? '#ECFDF5' : '#F9FAFB',
+                }}
+              >
+                <div style={{ fontSize: 11, fontWeight: 700, color: rerouteResult.rerouteRecommended ? '#065F46' : '#374151', marginBottom: 3 }}>
+                  {rerouteResult.rerouteRecommended ? '✅ Reroute Recommended' : 'ℹ️ No Reroute Needed'}
                 </div>
+                <div style={{ fontSize: 11, color: '#374151' }}>{rerouteResult.reason}</div>
 
-                {routeRisk.hazardousSegmentCount > 0 && (
-                  <div style={{ fontSize: 10, color: '#DC2626', fontWeight: 600, marginTop: 4 }}>
-                    ⚠️ {routeRisk.hazardousSegmentCount} high-risk warning segments on corridor
+                {rerouteResult.safetyIntelligence.status === 'DEGRADED' && (
+                  <div style={{ fontSize: 10, color: '#92400E', marginTop: 3 }}>
+                    Rerouting limited by degraded risk data.
+                  </div>
+                )}
+
+                {rerouteResult.rerouteRecommended && rerouteResult.recommendedRoute && (
+                  <div style={{ fontSize: 10, color: '#059669', marginTop: 3 }}>
+                    Recommended: {(rerouteResult.recommendedRoute.distanceMeters / 1000).toFixed(1)} km · {rerouteResult.recommendedRoute.risk.overallLevel} ({rerouteResult.recommendedRoute.risk.meanScore})
+                    {rerouteResult.metrics && ` · -${rerouteResult.metrics.hazardReductionPercent}% hazard`}
                   </div>
                 )}
               </div>
