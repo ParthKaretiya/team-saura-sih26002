@@ -10,7 +10,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "test": "tsx src/tests/api.test.ts",
-    "test:routing-optimization": "tsx src/tests/routing-optimization.test.ts"
+    "test:routing-optimization": "tsx src/tests/routing-optimization.test.ts",
+    "test:accessibility": "tsx src/tests/accessibility.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
