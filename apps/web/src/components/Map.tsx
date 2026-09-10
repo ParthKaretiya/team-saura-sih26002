@@ -78,6 +78,17 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
     accessibility: accessibilityData,
   });
 
+  const getResponsivePadding = () => {
+    const width = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    if (width <= 820) {
+      return { top: 70, bottom: 70, left: 30, right: 30 };
+    }
+    if (width <= 1024) {
+      return { top: 80, bottom: 80, left: 360, right: 40 };
+    }
+    return { top: 90, bottom: 90, left: 410, right: 400 };
+  };
+
   const renderRouteData = (selected: CandidateRouteProfile, baseline: CandidateRouteProfile) => {
     if (!mapRef.current || !mapRef.current.isStyleLoaded()) return;
     const map = mapRef.current;
@@ -144,7 +155,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
         (b, c) => b.extend(c as [number, number]),
         new maplibregl.LngLatBounds(coords[0], coords[0])
       );
-      mapRef.current.fitBounds(bounds, { padding: { top: 90, bottom: 90, left: 420, right: 400 }, duration: 1200 });
+      mapRef.current.fitBounds(bounds, { padding: getResponsivePadding(), maxZoom: 14, duration: 1200 });
     },
     updateRoutesOnMap: (selected: CandidateRouteProfile, baseline: CandidateRouteProfile) => {
       renderRouteData(selected, baseline);
@@ -477,10 +488,18 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
     };
   }, []);
 
-  // Update Routes when props change
+  // Update Routes and Fit Bounds when route props change
   useEffect(() => {
     if (selectedRoute && baselineRoute) {
       renderRouteData(selectedRoute, baselineRoute);
+      const coords = selectedRoute.geometry.coordinates;
+      if (coords.length > 0 && mapRef.current) {
+        const bounds = coords.reduce(
+          (b, c) => b.extend(c as [number, number]),
+          new maplibregl.LngLatBounds(coords[0], coords[0])
+        );
+        mapRef.current.fitBounds(bounds, { padding: getResponsivePadding(), maxZoom: 14, duration: 1200 });
+      }
     }
   }, [selectedRoute, baselineRoute]);
 
