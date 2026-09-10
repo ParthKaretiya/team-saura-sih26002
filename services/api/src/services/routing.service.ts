@@ -15,7 +15,9 @@ import type {
   RoutingOptions,
   CandidateRouteProfile,
   RerouteEvaluationResult,
+  RerouteExplanation,
   RouteOptimizationResult,
+  RouteSelectionExplanation,
   RoutingPreference,
   CandidateAccessibility,
   RouteAccessibilitySummary,
@@ -185,22 +187,16 @@ export class RoutingService {
     const candidateRoutes = await this.calculateCandidateRoutes(origin, destination, options);
     const corridors = await accessibilityService.listAccessibility();
     const accessibility = this.evaluateRouteAccessibility(candidateRoutes, corridors);
-    const eligibleIndexes = accessibility
-      .map((candidateAccessibility, index) => candidateAccessibility.isEligible ? index : -1)
-      .filter((index) => index >= 0);
-    const selectedIndexes = eligibleIndexes.length > 0
-      ? eligibleIndexes
-      : candidateRoutes.map((_, index) => index);
     const riskContext = await riskService.createRouteRiskEvaluationContext();
-    const eligibleCandidates = await Promise.all(selectedIndexes.map(async (index) => ({
-      ...(await this.profileCandidateRoute(candidateRoutes[index], index, index === 0, riskContext)),
+    const candidates = await Promise.all(candidateRoutes.map(async (route, index) => ({
+      ...(await this.profileCandidateRoute(route, index, index === 0, riskContext)),
       accessibility: accessibility[index],
     })));
-    const result = this.optimizeCandidateProfiles(eligibleCandidates, preference);
+    const result = this.optimizeCandidateProfiles(candidates, preference);
 
     return {
       ...result,
-      accessibility: this.accessibilitySummaryFor(accessibility.map((item) => ({ accessibility: item }))),
+      accessibility: this.accessibilitySummaryFor(candidates),
     };
   }
 
@@ -392,6 +388,12 @@ export class RoutingService {
         evaluatedCandidatesCount: candidates.length,
         safetyIntelligence,
         ...(routeAccessibility ? { accessibility: routeAccessibility } : {}),
+        explanation: {
+          summary: 'Rerouting is not recommended because the current route remains below the configured risk threshold.',
+          currentRiskScore: Math.round(currentExposure * 10) / 10,
+          currentRiskLevel: currentRoute.risk.overallLevel,
+          triggerReason: `Current route hazard exposure (${Math.round(currentExposure * 10) / 10}/100) is below the trigger score of ${OPTIMIZATION_CONFIG.rerouting.triggerScore}.`,
+        },
       };
     }
 
@@ -410,24 +412,63 @@ export class RoutingService {
         evaluatedCandidatesCount: candidates.length,
         safetyIntelligence,
         ...(routeAccessibility ? { accessibility: routeAccessibility } : {}),
+        explanation: {
+          summary: 'Rerouting is not recommended because no candidate provides the configured safety improvement within the allowed detour.',
+          currentRiskScore: Math.round(currentExposure * 10) / 10,
+          currentRiskLevel: currentRoute.risk.overallLevel,
+          triggerReason: 'Alternative routes did not achieve the required safety improvement ratio or exceeded the detour bound.',
+        },
       };
     }
 
+    const additionalDistanceMeters = Math.max(0, recommendedRoute.distanceMeters - currentRoute.distanceMeters);
+    const additionalDurationSeconds = Math.max(0, recommendedRoute.durationSeconds - currentRoute.durationSeconds);
+    const additionalDistanceKm = Math.round((additionalDistanceMeters / 1000) * 10) / 10;
+    const additionalDurationMinutes = Math.round((additionalDurationSeconds / 60) * 10) / 10;
+    const detourRatio = currentRoute.durationSeconds > 0
+      ? Math.round((recommendedRoute.durationSeconds / currentRoute.durationSeconds) * 100) / 100
+      : 1.0;
+    const hazardReductionPercent = Math.round(improvement * 1_000) / 10;
+    const recommendedExposure = this.hazardExposure(recommendedRoute);
+
+    const triggerReason = currentHasCriticalIncident
+      ? 'Critical active incident detected along current route.'
+      : currentRoute.accessibility?.status === 'CLOSED'
+        ? 'Current route intersects a CLOSED road corridor.'
+        : `Current route hazard exposure (${Math.round(currentExposure * 10) / 10}/100) exceeded trigger threshold (${OPTIMIZATION_CONFIG.rerouting.triggerScore}).`;
+
+    const summary = currentHasCriticalIncident
+      ? 'Rerouting is recommended because the current route has a critical active-incident hazard and a safer detour is available.'
+      : 'Rerouting is recommended because a candidate provides the configured safety improvement within the allowed detour.';
+
     return {
       rerouteRecommended: true,
-      reason: currentHasCriticalIncident
-        ? 'Rerouting is recommended because the current route has a critical active-incident hazard and a safer detour is available.'
-        : 'Rerouting is recommended because a candidate provides the configured safety improvement within the allowed detour.',
+      reason: summary,
       currentRoute: currentRouteSummary,
       recommendedRoute,
       metrics: {
-        hazardReductionPercent: Math.round(improvement * 1_000) / 10,
-        additionalDistanceMeters: Math.max(0, recommendedRoute.distanceMeters - currentRoute.distanceMeters),
-        additionalDurationSeconds: Math.max(0, recommendedRoute.durationSeconds - currentRoute.durationSeconds),
+        hazardReductionPercent,
+        additionalDistanceMeters,
+        additionalDurationSeconds,
+        additionalDistanceKm,
+        additionalDurationMinutes,
+        detourRatio,
       },
       evaluatedCandidatesCount: candidates.length,
       safetyIntelligence,
       ...(routeAccessibility ? { accessibility: routeAccessibility } : {}),
+      explanation: {
+        summary,
+        currentRiskScore: Math.round(currentExposure * 10) / 10,
+        currentRiskLevel: currentRoute.risk.overallLevel,
+        recommendedRiskScore: Math.round(recommendedExposure * 10) / 10,
+        recommendedRiskLevel: recommendedRoute.risk.overallLevel,
+        hazardReductionPercent,
+        additionalDistanceKm,
+        additionalDurationMinutes,
+        detourRatio,
+        triggerReason,
+      },
     };
   }
 
@@ -681,6 +722,14 @@ export class RoutingService {
       ? Math.max(0, this.riskReductionRatio(baselineRoute, selectedRoute) * 100)
       : 0;
 
+    const explanation = this.buildSelectionExplanation(
+      selectedRoute,
+      baselineRoute,
+      strategy,
+      selectionReason,
+      preference,
+    );
+
     return {
       origin: { latitude: originLatitude, longitude: originLongitude },
       destination: { latitude: destinationLatitude, longitude: destinationLongitude },
@@ -697,8 +746,76 @@ export class RoutingService {
         hazardReductionPercent: Math.round(riskReduction * 10) / 10,
         additionalDistanceKm: Math.max(0, Math.round((selectedRoute.distanceMeters - baselineRoute.distanceMeters) / 100) / 10),
         additionalDurationMinutes: Math.max(0, Math.round((selectedRoute.durationSeconds - baselineRoute.durationSeconds) / 6) / 10),
+        explanation,
       },
       accessibility: this.accessibilitySummaryFor(candidates),
+    };
+  }
+
+  private buildSelectionExplanation(
+    selectedRoute: CandidateRouteProfile,
+    baselineRoute: CandidateRouteProfile,
+    strategy: RouteOptimizationResult['optimization']['strategy'],
+    selectionReason: string,
+    preference: RoutingPreference,
+  ): RouteSelectionExplanation {
+    const hasRisk = this.hasUsableRisk(selectedRoute) && this.hasUsableRisk(baselineRoute);
+    const baselineExposure = hasRisk ? this.hazardExposure(baselineRoute) : 0;
+    const selectedExposure = hasRisk ? this.hazardExposure(selectedRoute) : 0;
+    const riskReduction = hasRisk && baselineExposure > 0
+      ? Math.max(0, Math.round(((baselineExposure - selectedExposure) / baselineExposure) * 1000) / 10)
+      : 0;
+
+    const detourMeters = Math.max(0, selectedRoute.distanceMeters - baselineRoute.distanceMeters);
+    const detourSeconds = Math.max(0, selectedRoute.durationSeconds - baselineRoute.durationSeconds);
+    const detourKm = Math.round((detourMeters / 1000) * 10) / 10;
+    const detourMinutes = Math.round((detourSeconds / 60) * 10) / 10;
+    const detourRatio = baselineRoute.durationSeconds > 0
+      ? Math.round((selectedRoute.durationSeconds / baselineRoute.durationSeconds) * 100) / 100
+      : 1.0;
+
+    const accessibilityStatus = selectedRoute.accessibility?.status ?? 'ACCESSIBLE';
+    const factors: string[] = [];
+
+    if (selectedRoute.isBaseline) {
+      factors.push(`Baseline route maintains direct highway travel (${(selectedRoute.distanceMeters / 1000).toFixed(1)} km, ${Math.round(selectedRoute.durationSeconds / 60)} min).`);
+      if (hasRisk) {
+        factors.push(`Baseline hazard exposure is ${Math.round(selectedExposure * 10) / 10}/100 (${selectedRoute.risk.overallLevel}).`);
+      }
+    } else {
+      if (riskReduction > 0) {
+        factors.push(`Reduces hazard exposure from ${Math.round(baselineExposure * 10) / 10} to ${Math.round(selectedExposure * 10) / 10} (-${riskReduction}%).`);
+      }
+      factors.push(`Detour is +${detourKm} km (+${detourMinutes} min), detour ratio ${detourRatio}x (within ${OPTIMIZATION_CONFIG.constraints.maxDetourRatio}x limit).`);
+    }
+
+    if (selectedRoute.accessibility?.status === 'RESTRICTED') {
+      factors.push('Traverses RESTRICTED corridor with active travel advisory.');
+    } else if (selectedRoute.accessibility?.status === 'CLOSED') {
+      factors.push('Traverses CLOSED corridor under best-effort routing (no open alternative available).');
+    } else if (baselineRoute.accessibility?.status === 'CLOSED' && !selectedRoute.isBaseline) {
+      factors.push('Bypasses CLOSED baseline highway corridor.');
+    }
+
+    const corridorSummary = selectedRoute.accessibility?.affectedCorridors?.length
+      ? selectedRoute.accessibility.affectedCorridors.map((c) => `${c.name} (${c.status})`).join(', ')
+      : undefined;
+
+    return {
+      summary: selectionReason,
+      selectedRouteName: selectedRoute.name,
+      isBaseline: selectedRoute.isBaseline,
+      baselineRiskScore: Math.round(baselineExposure * 10) / 10,
+      baselineRiskLevel: baselineRoute.risk.overallLevel,
+      selectedRiskScore: Math.round(selectedExposure * 10) / 10,
+      selectedRiskLevel: selectedRoute.risk.overallLevel,
+      hazardReductionPercent: riskReduction,
+      detourKm,
+      detourMinutes,
+      detourRatio,
+      accessibilityStatus,
+      corridorStatusSummary: corridorSummary,
+      factors,
     };
   }
 
