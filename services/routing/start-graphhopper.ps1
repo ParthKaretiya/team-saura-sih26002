@@ -38,11 +38,11 @@ if (-not $detectedVersion -and $JavaCommand -eq 'java') {
     $candidatePaths += Join-Path $env:JAVA_HOME 'bin\java.exe'
   }
   $searchPatterns = @(
-    'C:\Program Files\Eclipse Adoptium\jdk-17*\bin\java.exe',
-    'C:\Program Files\Java\jdk-17*\bin\java.exe',
-    'C:\Program Files\Microsoft\jdk-17*\bin\java.exe',
-    'C:\Program Files\Amazon Corretto\jdk17*\bin\java.exe',
-    'C:\Program Files\Semeru\jdk-17*\bin\java.exe'
+    'C:\Program Files\Eclipse Adoptium\*17*\bin\java.exe',
+    'C:\Program Files\Java\*17*\bin\java.exe',
+    'C:\Program Files\Microsoft\*17*\bin\java.exe',
+    'C:\Program Files\Amazon Corretto\*17*\bin\java.exe',
+    'C:\Program Files\Semeru\*17*\bin\java.exe'
   )
   foreach ($pat in $searchPatterns) {
     $found = Get-Item $pat -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
