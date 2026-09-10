@@ -134,6 +134,7 @@ export default function RoutePlanner({
         onClick={() => onCalculate()}
         disabled={isRouting}
         className="btn-primary"
+        aria-busy={isRouting}
       >
         {isRouting ? (
           <>
@@ -148,7 +149,7 @@ export default function RoutePlanner({
                 animation: 'spin 0.8s linear infinite',
               }}
             />
-            <span>OPTIMIZING ROUTE...</span>
+            <span>CALCULATING ROUTE...</span>
           </>
         ) : (
           <span>CALCULATE ROUTE</span>

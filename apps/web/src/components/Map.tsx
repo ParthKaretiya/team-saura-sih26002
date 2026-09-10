@@ -198,8 +198,8 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
           layout: { 'line-join': 'round', 'line-cap': 'round' },
           paint: {
             'line-color': BASELINE_ROUTE_THEME.casingColor,
-            'line-width': BASELINE_ROUTE_THEME.lineWidth + 2,
-            'line-opacity': BASELINE_ROUTE_THEME.lineOpacity,
+            'line-width': BASELINE_ROUTE_THEME.lineWidth + 2.5,
+            'line-opacity': 0.7,
           },
         });
 
@@ -212,12 +212,12 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
             'line-color': BASELINE_ROUTE_THEME.lineColor,
             'line-width': BASELINE_ROUTE_THEME.lineWidth,
             'line-opacity': BASELINE_ROUTE_THEME.lineOpacity,
-            'line-dasharray': [2, 1.5],
+            'line-dasharray': [2, 2],
           },
         });
       }
 
-      // 1b. Selected/Optimized Route Layer (Dominant Blue Line)
+      // 1b. Selected/Optimized Route Layer (Dominant, high-contrast, halo glow)
       if (!map.getSource('selected-route-source')) {
         map.addSource('selected-route-source', {
           type: 'geojson',
@@ -228,6 +228,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
           },
         });
 
+        // Deep dark outer casing
         map.addLayer({
           id: 'selected-route-casing',
           type: 'line',
@@ -235,11 +236,25 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
           layout: { 'line-join': 'round', 'line-cap': 'round' },
           paint: {
             'line-color': SELECTED_ROUTE_THEME.casingColor,
-            'line-width': SELECTED_ROUTE_THEME.lineWidth + 4,
-            'line-opacity': SELECTED_ROUTE_THEME.lineOpacity,
+            'line-width': SELECTED_ROUTE_THEME.casingWidth,
+            'line-opacity': 0.9,
           },
         });
 
+        // Vibrant mid-glow halo
+        map.addLayer({
+          id: 'selected-route-halo',
+          type: 'line',
+          source: 'selected-route-source',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': SELECTED_ROUTE_THEME.haloColor,
+            'line-width': SELECTED_ROUTE_THEME.haloWidth,
+            'line-opacity': 0.95,
+          },
+        });
+
+        // Vivid sky blue core
         map.addLayer({
           id: 'selected-route-line',
           type: 'line',

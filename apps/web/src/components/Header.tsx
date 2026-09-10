@@ -62,20 +62,20 @@ export default function Header({
         </div>
 
         <div className="tag-badge" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: '#94A3B8', fontSize: 10 }}>HAZARDS</span>
+          <span style={{ color: '#94A3B8', fontSize: 10 }}>REGION INCIDENTS</span>
           <span style={{ fontWeight: 700, color: incidentCount > 0 ? '#F87171' : '#94A3B8' }}>
             {incidentCount} Live
           </span>
         </div>
 
         <div className="tag-badge" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: '#94A3B8', fontSize: 10 }}>CATALOG</span>
+          <span style={{ color: '#94A3B8', fontSize: 10 }}>HISTORICAL CATALOG</span>
           <span style={{ fontWeight: 700, color: '#C084FC' }}>{hazardZoneCount} Zones</span>
         </div>
 
         <div className="tag-badge" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: '#94A3B8', fontSize: 10 }}>CORRIDORS</span>
-          <span style={{ fontWeight: 700, color: '#A78BFA' }}>{accessibilityCount} Monitored</span>
+          <span style={{ color: '#94A3B8', fontSize: 10 }}>MONITORED HIGHWAYS</span>
+          <span style={{ fontWeight: 700, color: '#A78BFA' }}>{accessibilityCount} Corridors</span>
         </div>
       </div>
 

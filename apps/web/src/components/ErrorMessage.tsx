@@ -5,10 +5,13 @@ interface ErrorMessageProps {
 }
 
 export default function ErrorMessage({
-  title = 'Route Service Alert',
+  title = 'ROUTE CALCULATION FAILED',
   message,
   onRetry,
 }: ErrorMessageProps) {
+  // Extract clean message, avoiding stack traces if any
+  const cleanMessage = message.includes('\n') ? message.split('\n')[0] : message;
+
   return (
     <div
       style={{
@@ -19,12 +22,12 @@ export default function ErrorMessage({
         color: '#FCA5A5',
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
+        gap: 8,
       }}
       role="alert"
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 12, color: '#F87171' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 11, color: '#F87171', letterSpacing: 0.5 }}>
           <span>⚠️</span>
           <span>{title}</span>
         </div>
@@ -32,21 +35,24 @@ export default function ErrorMessage({
           <button
             onClick={onRetry}
             style={{
-              padding: '2px 8px',
+              padding: '3px 10px',
               backgroundColor: 'rgba(239, 68, 68, 0.25)',
               border: '1px solid #EF4444',
               borderRadius: 4,
               color: '#FFFFFF',
               fontSize: 11,
-              fontWeight: 600,
+              fontWeight: 700,
               cursor: 'pointer',
+              transition: 'background-color 0.15s ease',
             }}
           >
             Retry
           </button>
         )}
       </div>
-      <div style={{ fontSize: 12, color: '#FECACA', lineHeight: 1.4 }}>{message}</div>
+      <div style={{ fontSize: 11, color: '#FECACA', lineHeight: 1.4 }}>
+        {cleanMessage || 'Routing service is currently unavailable.'}
+      </div>
     </div>
   );
 }
