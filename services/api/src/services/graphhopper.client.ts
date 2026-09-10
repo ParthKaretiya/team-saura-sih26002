@@ -100,10 +100,45 @@ export class GraphHopperClient {
         );
       }
       throw new RoutingEngineError(
-        'GraphHopper is unavailable. Start the local routing service and try again.',
+        `GraphHopper is unavailable at ${this.config.baseUrl}. Start the local routing service and try again (e.g. .\\services\\routing\\start-graphhopper.ps1).`,
         503,
         'ROUTING_ENGINE_UNAVAILABLE',
       );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async checkHealth(): Promise<{
+    status: 'connected' | 'unreachable';
+    url: string;
+    latencyMs?: number;
+    error?: string;
+  }> {
+    const start = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    try {
+      const healthUrl = new URL('/health', this.config.baseUrl);
+      const res = await this.fetchImpl(healthUrl, { signal: controller.signal });
+      if (res.ok) {
+        return {
+          status: 'connected',
+          url: this.config.baseUrl,
+          latencyMs: Date.now() - start,
+        };
+      }
+      return {
+        status: 'unreachable',
+        url: this.config.baseUrl,
+        error: `GraphHopper returned HTTP ${res.status}`,
+      };
+    } catch (err) {
+      return {
+        status: 'unreachable',
+        url: this.config.baseUrl,
+        error: (err as Error).message || 'Connection refused',
+      };
     } finally {
       clearTimeout(timeout);
     }

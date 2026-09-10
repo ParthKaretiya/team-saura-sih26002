@@ -36,6 +36,15 @@ export class RoutingService {
       });
   }
 
+  async checkHealth(): Promise<{
+    status: 'connected' | 'unreachable';
+    url: string;
+    latencyMs?: number;
+    error?: string;
+  }> {
+    return this.client.checkHealth();
+  }
+
   /**
    * Calculates a single baseline route between origin and destination.
    * Preserves backward compatibility with Step 5.
