@@ -243,12 +243,12 @@ export default function Map() {
             layout: {
               'line-join': 'round',
               'line-cap': 'round',
-              ...(status === 'RESTRICTED' ? { 'line-dasharray': [2, 1.5] } : {}),
             },
             paint: {
               'line-color': ACCESSIBILITY_THEME[status].color,
               'line-width': status === 'CLOSED' ? 7 : 5,
               'line-opacity': status === 'OPEN' ? 0.7 : 0.95,
+              ...(status === 'RESTRICTED' ? { 'line-dasharray': [2, 1.5] } : {}),
             },
           });
 
