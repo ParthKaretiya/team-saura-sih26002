@@ -68,17 +68,20 @@ export const ROUTE_THEME = {
 };
 
 export const BASELINE_ROUTE_THEME = {
-  lineColor: '#94A3B8', // Slate / Gray
-  casingColor: '#475569',
+  lineColor: '#64748B', // Slate / Gray - visually secondary
+  casingColor: '#0F172A', // Dark casing
   lineWidth: 3.5,
-  lineOpacity: 0.85,
+  lineOpacity: 0.8,
 };
 
 export const SELECTED_ROUTE_THEME = {
-  lineColor: '#2563EB', // Strong Royal Blue - visually dominant
-  casingColor: '#1E3A8A',
-  lineWidth: 6,
-  lineOpacity: 0.95,
+  lineColor: '#38BDF8', // Vivid Sky Blue core
+  haloColor: '#2563EB', // Royal Blue mid-glow
+  casingColor: '#0F172A', // Deep navy outer casing for ultra-high contrast
+  lineWidth: 7,
+  haloWidth: 11,
+  casingWidth: 15,
+  lineOpacity: 1.0,
 };
 
 export const HAZARD_ZONE_THEME = {

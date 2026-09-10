@@ -3,15 +3,109 @@ import type { AlertRecord } from '../types/api';
 interface AlertsPanelProps {
   alerts: AlertRecord[];
   isUnavailable?: boolean;
+  hasCalculatedRoute?: boolean;
+  onRecalculateSaferRoute?: () => void;
+  onViewAffectedSegment?: () => void;
 }
 
-export default function AlertsPanel({ alerts, isUnavailable = false }: AlertsPanelProps) {
+export default function AlertsPanel({
+  alerts,
+  isUnavailable = false,
+  hasCalculatedRoute = false,
+  onRecalculateSaferRoute,
+  onViewAffectedSegment,
+}: AlertsPanelProps) {
+  // Check if any alert affects the current route
+  const routeAlerts = alerts.filter((a) => a.routeCandidateId || a.severity === 'CRITICAL');
+  const hasRouteAlert = hasCalculatedRoute && routeAlerts.length > 0;
+
   return (
     <div className="intel-card">
-      <div className="intel-card-header">
+      {/* Route-Specific Alert / Status Banner */}
+      {hasRouteAlert ? (
+        <div
+          style={{
+            padding: '10px 12px',
+            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: 6,
+            marginBottom: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#EF4444', fontWeight: 800, fontSize: 12, marginBottom: 4 }}>
+            <span>⚠️</span>
+            <span>LIVE ROUTE ALERT</span>
+          </div>
+          <div style={{ fontSize: 11, color: '#FCA5A5', lineHeight: 1.4, marginBottom: 8 }}>
+            Hazard or obstruction detected on current route ({routeAlerts[0]?.title || 'Active Corridor Warning'}).
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {onViewAffectedSegment && (
+              <button
+                onClick={onViewAffectedSegment}
+                style={{
+                  flex: 1,
+                  padding: '5px 8px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.25)',
+                  border: '1px solid rgba(239, 68, 68, 0.5)',
+                  borderRadius: 4,
+                  color: '#FFFFFF',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                View Affected Segment
+              </button>
+            )}
+            {onRecalculateSaferRoute && (
+              <button
+                onClick={onRecalculateSaferRoute}
+                style={{
+                  flex: 1,
+                  padding: '5px 8px',
+                  backgroundColor: '#059669',
+                  border: 'none',
+                  borderRadius: 4,
+                  color: '#FFFFFF',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Recalculate Safer Route
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            padding: '8px 12px',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            borderRadius: 6,
+            marginBottom: 10,
+          }}
+        >
+          <div style={{ fontSize: 10, fontWeight: 800, color: '#34D399', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            ROUTE STATUS
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#34D399', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span>✓</span>
+            <span>No active route alerts</span>
+          </div>
+          <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>
+            Route currently operating normally without active closures or critical disruptions.
+          </div>
+        </div>
+      )}
+
+      {/* Regional Alerts Section */}
+      <div className="intel-card-header" style={{ marginBottom: 6 }}>
         <span className="intel-card-title">
           <span>🔔</span>
-          <span>Active Route &amp; Regional Alerts</span>
+          <span>Regional Highway Advisories</span>
         </span>
         <span
           style={{
@@ -19,41 +113,22 @@ export default function AlertsPanel({ alerts, isUnavailable = false }: AlertsPan
             fontWeight: 700,
             padding: '2px 6px',
             borderRadius: 4,
-            backgroundColor: alerts.length > 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-            color: alerts.length > 0 ? '#F87171' : '#34D399',
+            backgroundColor: alerts.length > 0 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+            color: alerts.length > 0 ? '#FCD34D' : '#34D399',
           }}
         >
-          {alerts.length} ACTIVE
+          {alerts.length} REGION ADVISORIES
         </span>
       </div>
 
-      {alerts.length === 0 && !isUnavailable && (
-        <div
-          style={{
-            padding: '12px',
-            backgroundColor: 'rgba(15, 23, 42, 0.6)',
-            border: '1px solid #334155',
-            borderRadius: 6,
-            textAlign: 'center',
-            color: '#94A3B8',
-            fontSize: 11,
-          }}
-        >
-          <div style={{ color: '#34D399', fontWeight: 700, marginBottom: 2 }}>
-            ✓ NO ACTIVE ROUTE ALERTS
-          </div>
-          <div>All monitored NER corridors report normal operating conditions.</div>
-        </div>
-      )}
-
       {isUnavailable && (
-        <div style={{ padding: '8px', fontSize: 11, color: '#FCD34D' }}>
+        <div style={{ padding: '6px 8px', fontSize: 10, color: '#FCD34D' }}>
           ⚠️ Regional alerts service is temporarily offline.
         </div>
       )}
 
       {alerts.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
           {alerts.map((alert) => {
             const isCritical = alert.severity === 'CRITICAL';
             const isWarning = alert.severity === 'WARNING';
@@ -71,11 +146,11 @@ export default function AlertsPanel({ alerts, isUnavailable = false }: AlertsPan
                   borderRadius: 6,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 3,
+                  gap: 2,
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: accentColor, textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: accentColor, textTransform: 'uppercase' }}>
                     {alert.severity} · {alert.category.replace('_', ' ')}
                   </span>
                   {alert.routeCandidateId && (
@@ -85,7 +160,7 @@ export default function AlertsPanel({ alerts, isUnavailable = false }: AlertsPan
                   )}
                 </div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#F8FAFC' }}>{alert.title}</div>
-                <div style={{ fontSize: 11, color: '#CBD5E1', lineHeight: 1.3 }}>{alert.message}</div>
+                <div style={{ fontSize: 10, color: '#CBD5E1', lineHeight: 1.3 }}>{alert.message}</div>
               </div>
             );
           })}

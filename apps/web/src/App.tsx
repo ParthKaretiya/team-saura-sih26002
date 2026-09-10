@@ -333,12 +333,12 @@ export default function App() {
             />
 
             {/* In-Flight Pipeline Loading State */}
-            {isRouting && <LoadingIndicator label="Calculating Optimal Resilient Route..." />}
+            {isRouting && <LoadingIndicator label="CALCULATING ROUTE..." />}
 
             {/* Error Message */}
             {routingError && (
               <ErrorMessage
-                title="Route Calculation Error"
+                title="ROUTE CALCULATION FAILED"
                 message={routingError}
                 onRetry={() => handleCalculateRoute()}
               />
@@ -405,7 +405,12 @@ export default function App() {
             />
 
             {/* Active Alerts */}
-            <AlertsPanel alerts={alerts} isUnavailable={alertsUnavailable} />
+            <AlertsPanel
+              alerts={alerts}
+              isUnavailable={alertsUnavailable}
+              hasCalculatedRoute={Boolean(optimization)}
+              onRecalculateSaferRoute={handleCheckReroute}
+            />
 
             {/* Dynamic Reroute Advisor */}
             <ReroutePanel

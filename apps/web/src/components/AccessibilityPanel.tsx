@@ -27,7 +27,7 @@ export default function AccessibilityPanel({
           <span>Road Accessibility Intelligence</span>
         </span>
         <span style={{ fontSize: 10, color: '#94A3B8', fontFamily: 'var(--font-mono)' }}>
-          {isUnavailable ? 'OFFLINE' : `${corridorCount} Corridors`}
+          {isUnavailable ? 'OFFLINE' : `SYSTEM: ${corridorCount} Monitored`}
         </span>
       </div>
 
@@ -141,7 +141,9 @@ export default function AccessibilityPanel({
           }}
         >
           <span>●</span>
-          <span>Selected route is verified 100% accessible with normal traffic flow.</span>
+          <span>
+            <strong>SELECTED ROUTE:</strong> 100% Accessible (0 closed/restricted corridors intersected).
+          </span>
         </div>
       )}
 
