@@ -514,13 +514,18 @@ export class RoutingService {
       );
     }
 
+    const eligibleAccessibility = scoredCandidates.filter((candidate) => candidate.accessibility?.isEligible !== false);
+    const candidatePool = eligibleAccessibility.length > 0 ? eligibleAccessibility : scoredCandidates;
+
     if (preference === 'FASTEST') {
-      const selected = this.sortByTravelCost(scoredCandidates)[0];
+      const selected = this.sortByTravelCost(candidatePool)[0];
       const reason = candidates.length === 1
         ? 'Fastest baseline selected because GraphHopper returned only one candidate route.'
         : selected.candidateId === scoredBaseline.candidateId
           ? 'Fastest route selected because it has the shortest estimated duration.'
-          : 'Fastest route selected because it has the shortest estimated duration among the returned candidates.';
+          : selected.accessibility?.status !== 'CLOSED' && scoredBaseline.accessibility?.status === 'CLOSED'
+            ? `Fastest accessible route (${selected.name}) selected because baseline highway route intersects a CLOSED corridor.`
+            : 'Fastest route selected because it has the shortest estimated duration among the returned candidates.';
 
       return this.buildOptimizationResult(
         selected,
@@ -543,7 +548,7 @@ export class RoutingService {
       );
     }
 
-    const detourEligible = scoredCandidates.filter((candidate) => this.isWithinDetourLimit(candidate, scoredBaseline));
+    const detourEligible = candidatePool.filter((candidate) => this.isWithinDetourLimit(candidate, scoredBaseline));
     const riskEligible = detourEligible.filter((candidate) => this.hasUsableRisk(candidate));
     const nonCriticalCandidates = riskEligible.filter((candidate) => !this.hasCriticalActiveIncident(candidate));
     const eligible = nonCriticalCandidates.length > 0 ? nonCriticalCandidates : riskEligible;
