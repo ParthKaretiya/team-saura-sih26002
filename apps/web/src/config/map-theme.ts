@@ -44,6 +44,17 @@ export const RISK_LEVEL_THEME: Record<string, { color: string; bg: string; text:
   LOW: { color: '#059669', bg: '#ECFDF5', text: '#065F46', label: 'LOW RISK', border: '#6EE7B7' },
 };
 
+// Bright fills for risk levels rendered on the dark app surface (charts, bars).
+// Follows the product's semantic language: green safe -> amber warning ->
+// orange high -> red critical. Distinct from RISK_LEVEL_THEME, whose light bg
+// values are tuned for small light-background badges.
+export const RISK_LEVEL_FILL: Record<string, string> = {
+  CRITICAL: '#EF4444',
+  HIGH: '#F97316',
+  MEDIUM: '#F59E0B',
+  LOW: '#10B981',
+};
+
 export const DEFAULT_SEVERITY_CONFIG: SeverityVisualConfig = {
   color: '#6B7280',
   radius: 6,

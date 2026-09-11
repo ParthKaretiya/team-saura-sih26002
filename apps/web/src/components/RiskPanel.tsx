@@ -1,6 +1,6 @@
 import type { CandidateRouteProfile } from '../types/api';
 import { RISK_LEVEL_THEME } from '../config/map-theme';
-import RiskContributors from './RiskContributors';
+import RouteRiskProfile from './RouteRiskProfile';
 
 interface RiskPanelProps {
   selectedRoute: CandidateRouteProfile;
@@ -190,8 +190,8 @@ export default function RiskPanel({ selectedRoute, safetyStatus }: RiskPanelProp
         </div>
       )}
 
-      {/* Risk Contributors */}
-      <RiskContributors selectedRoute={selectedRoute} />
+      {/* Real per-waypoint risk profile + factor distribution */}
+      <RouteRiskProfile selectedRoute={selectedRoute} />
     </div>
   );
 }

@@ -62,6 +62,14 @@ export interface RouteResponse {
 
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
+export interface RiskWaypoint {
+  coordinates: [number, number]; // [lon, lat]
+  distanceAlongRouteKm: number;
+  score: number;
+  level: RiskLevel;
+  primaryFactor: string;
+}
+
 export interface RouteRiskSummary {
   overallLevel: RiskLevel;
   meanScore: number;
@@ -69,6 +77,7 @@ export interface RouteRiskSummary {
   hazardousSegmentCount: number;
   dominantTrigger: string;
   sampledWaypointsCount: number;
+  waypoints?: RiskWaypoint[];
 }
 
 export interface HazardZoneFeature {
