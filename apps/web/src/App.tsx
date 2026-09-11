@@ -299,6 +299,7 @@ export default function App() {
           showHazardZones={showHazardZones}
           selectedRoute={optimization?.selectedRoute ?? null}
           baselineRoute={optimization?.baselineRoute ?? null}
+          isDriverMode={isDriverMode}
         />
 
         {/* 3. Floating Operational Map Legend */}

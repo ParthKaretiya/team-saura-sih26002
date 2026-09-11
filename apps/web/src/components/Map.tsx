@@ -52,6 +52,7 @@ interface MapProps {
   showHazardZones: boolean;
   selectedRoute: CandidateRouteProfile | null;
   baselineRoute: CandidateRouteProfile | null;
+  isDriverMode?: boolean;
 }
 
 export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponent(
@@ -63,6 +64,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
     showHazardZones,
     selectedRoute,
     baselineRoute,
+    isDriverMode = false,
   },
   ref
 ) {
@@ -78,7 +80,10 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
     accessibility: accessibilityData,
   });
 
-  const getResponsivePadding = () => {
+  const getResponsivePadding = (driver: boolean) => {
+    if (driver) {
+      return { top: 150, bottom: 240, left: 40, right: 40 };
+    }
     const width = typeof window !== 'undefined' ? window.innerWidth : 1200;
     if (width <= 820) {
       return { top: 70, bottom: 70, left: 30, right: 30 };
@@ -87,6 +92,25 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
       return { top: 80, bottom: 80, left: 360, right: 40 };
     }
     return { top: 90, bottom: 90, left: 410, right: 400 };
+  };
+
+  const raiseRouteLayers = (map: maplibregl.Map) => {
+    const beforeId = map.getLayer('hazard-zones-circles') ? 'hazard-zones-circles' : undefined;
+    const orderedLayers = [
+      'baseline-route-casing',
+      'baseline-route-line',
+      'selected-route-casing',
+      'selected-route-halo',
+      'selected-route-line',
+    ];
+    orderedLayers.forEach((layerId) => {
+      if (!map.getLayer(layerId)) return;
+      if (beforeId) {
+        map.moveLayer(layerId, beforeId);
+      } else {
+        map.moveLayer(layerId);
+      }
+    });
   };
 
   const renderRouteData = (selected: CandidateRouteProfile, baseline: CandidateRouteProfile) => {
@@ -140,6 +164,8 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
         .setLngLat(end)
         .addTo(map);
     }
+
+    raiseRouteLayers(map);
   };
 
   useImperativeHandle(ref, () => ({
@@ -155,7 +181,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
         (b, c) => b.extend(c as [number, number]),
         new maplibregl.LngLatBounds(coords[0], coords[0])
       );
-      mapRef.current.fitBounds(bounds, { padding: getResponsivePadding(), maxZoom: 14, duration: 1200 });
+      mapRef.current.fitBounds(bounds, { padding: getResponsivePadding(false), maxZoom: 14, duration: 1200 });
     },
     updateRoutesOnMap: (selected: CandidateRouteProfile, baseline: CandidateRouteProfile) => {
       renderRouteData(selected, baseline);
@@ -503,20 +529,26 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
     };
   }, []);
 
-  // Update Routes and Fit Bounds when route props change
+  // Update Routes and Fit Bounds when route props or view mode change
   useEffect(() => {
+    if (!mapRef.current) return;
+    mapRef.current.resize();
     if (selectedRoute && baselineRoute) {
       renderRouteData(selectedRoute, baselineRoute);
       const coords = selectedRoute.geometry.coordinates;
-      if (coords.length > 0 && mapRef.current) {
+      if (coords.length > 0) {
         const bounds = coords.reduce(
           (b, c) => b.extend(c as [number, number]),
           new maplibregl.LngLatBounds(coords[0], coords[0])
         );
-        mapRef.current.fitBounds(bounds, { padding: getResponsivePadding(), maxZoom: 14, duration: 1200 });
+        mapRef.current.fitBounds(bounds, {
+          padding: getResponsivePadding(isDriverMode),
+          maxZoom: 14,
+          duration: 1200,
+        });
       }
     }
-  }, [selectedRoute, baselineRoute]);
+  }, [selectedRoute, baselineRoute, isDriverMode]);
 
   // Update Hazard Layer Visibility
   useEffect(() => {
