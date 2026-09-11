@@ -1,5 +1,5 @@
 import type { CandidateRouteProfile } from '../types/api';
-import { RISK_LEVEL_THEME } from '../config/map-theme';
+import { RISK_LEVEL_THEME, RISK_LEVEL_FILL } from '../config/map-theme';
 
 interface RouteSummaryProps {
   selectedRoute: CandidateRouteProfile;
@@ -16,6 +16,7 @@ export default function RouteSummary({ selectedRoute, strategy, preference }: Ro
 
   const risk = selectedRoute.risk;
   const riskTheme = RISK_LEVEL_THEME[risk.overallLevel] || RISK_LEVEL_THEME.MEDIUM;
+  const riskFill = RISK_LEVEL_FILL[risk.overallLevel] ?? RISK_LEVEL_FILL.MEDIUM;
 
   return (
     <div className="intel-card" style={{ borderLeft: '4px solid #2563EB' }}>
@@ -80,8 +81,8 @@ export default function RouteSummary({ selectedRoute, strategy, preference }: Ro
       <div
         style={{
           padding: '10px 12px',
-          backgroundColor: riskTheme.bg,
-          border: `1px solid ${riskTheme.border}`,
+          backgroundColor: `${riskFill}1F`,
+          border: `1px solid ${riskFill}59`,
           borderRadius: 6,
           display: 'flex',
           alignItems: 'center',
@@ -89,10 +90,10 @@ export default function RouteSummary({ selectedRoute, strategy, preference }: Ro
         }}
       >
         <div>
-          <div style={{ fontSize: 10, fontWeight: 800, color: riskTheme.text, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: '#94A3B8', letterSpacing: 0.5, textTransform: 'uppercase' }}>
             SAFETY RISK ASSESSMENT
           </div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: riskTheme.color, marginTop: 2 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: riskFill, marginTop: 2 }}>
             {riskTheme.label} · Dominant: {risk.dominantTrigger}
           </div>
         </div>
@@ -103,13 +104,13 @@ export default function RouteSummary({ selectedRoute, strategy, preference }: Ro
               fontSize: 22,
               fontWeight: 800,
               fontFamily: 'var(--font-mono)',
-              color: riskTheme.color,
+              color: riskFill,
               lineHeight: 1,
             }}
           >
             {risk.meanScore.toFixed(1)}
           </div>
-          <div style={{ fontSize: 9, fontWeight: 600, color: riskTheme.text, marginTop: 2 }}>
+          <div style={{ fontSize: 9, fontWeight: 600, color: '#94A3B8', marginTop: 2 }}>
             PEAK: {risk.maxScore.toFixed(1)}
           </div>
         </div>
