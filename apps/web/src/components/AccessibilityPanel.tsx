@@ -15,6 +15,7 @@ export default function AccessibilityPanel({
   isUnavailable = false,
 }: AccessibilityPanelProps) {
   const corridorCount = corridorData?.features?.length || 0;
+  const hasRouteContext = Boolean(accessibilitySummary || candidateAccessibility);
   const isRestricted = candidateAccessibility?.status === 'RESTRICTED' || accessibilitySummary?.status === 'RESTRICTED';
   const isAllClosed = accessibilitySummary?.status === 'ALL_CANDIDATES_CLOSED';
   const hasClosedCorridor = accessibilitySummary?.affectedCorridors?.some((c) => c.status === 'CLOSED');
@@ -73,7 +74,24 @@ export default function AccessibilityPanel({
       </div>
 
       {/* Real Route-Level Accessibility Warnings */}
-      {isAllClosed ? (
+      {!hasRouteContext ? (
+        <div
+          style={{
+            padding: '8px 10px',
+            backgroundColor: 'rgba(15, 23, 42, 0.7)',
+            border: '1px solid #334155',
+            borderRadius: 6,
+            fontSize: 11,
+            color: '#CBD5E1',
+          }}
+        >
+          <strong style={{ color: '#94A3B8' }}>Awaiting route</strong>
+          <div style={{ marginTop: 2, fontSize: 10, color: '#94A3B8' }}>
+            Calculate a route to evaluate corridor accessibility along the selected path. Regional corridor
+            monitoring stays active below.
+          </div>
+        </div>
+      ) : isAllClosed ? (
         <div
           style={{
             padding: '8px 10px',
