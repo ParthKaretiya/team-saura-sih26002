@@ -1,5 +1,5 @@
 import type { CandidateRouteProfile } from '../../types/api';
-import { RISK_LEVEL_THEME, ACCESSIBILITY_THEME } from '../../config/map-theme';
+import { RISK_LEVEL_THEME, RISK_LEVEL_FILL, ACCESSIBILITY_THEME } from '../../config/map-theme';
 
 interface DriverSafetyStatusProps {
   selectedRoute: CandidateRouteProfile;
@@ -12,6 +12,7 @@ interface DriverSafetyStatusProps {
 export default function DriverSafetyStatus({ selectedRoute, safetyStatus }: DriverSafetyStatusProps) {
   const risk = selectedRoute.risk;
   const riskTheme = RISK_LEVEL_THEME[risk.overallLevel] || RISK_LEVEL_THEME.MEDIUM;
+  const riskFill = RISK_LEVEL_FILL[risk.overallLevel] ?? RISK_LEVEL_FILL.MEDIUM;
   const ml = selectedRoute.mlSummary;
   const accessibilityStatus = selectedRoute.accessibility?.status ?? 'UNKNOWN';
   const accessibilityTheme = ACCESSIBILITY_THEME[accessibilityStatus as keyof typeof ACCESSIBILITY_THEME];
@@ -29,10 +30,10 @@ export default function DriverSafetyStatus({ selectedRoute, safetyStatus }: Driv
 
       <div
         className="driver-risk-banner"
-        style={{ backgroundColor: riskTheme.bg, borderColor: riskTheme.border }}
+        style={{ backgroundColor: `${riskFill}1F`, borderColor: `${riskFill}59` }}
       >
-        <span style={{ color: riskTheme.text, fontWeight: 800, fontSize: 11 }}>{riskTheme.label}</span>
-        <span style={{ color: riskTheme.color, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
+        <span style={{ color: riskFill, fontWeight: 800, fontSize: 11 }}>{riskTheme.label}</span>
+        <span style={{ color: riskFill, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
           {risk.meanScore.toFixed(1)} / 100
         </span>
       </div>
