@@ -73,7 +73,14 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
   const originMarkerRef = useRef<maplibregl.Marker | null>(null);
   const destMarkerRef = useRef<maplibregl.Marker | null>(null);
 
-  const initialDataRef = useRef({
+  // Latest telemetry snapshot, kept current by the sync effect near the bottom of
+  // this component. setupLayers runs once (on the map's 'load' event) and seeds
+  // each source from this ref. Reading the *latest* data here — rather than a
+  // snapshot frozen at mount — ensures data that arrived during the style-loading
+  // window is still used. This matters for hazard zones, which are fetched once
+  // (no polling): if their fetch resolved before the style finished loading, the
+  // data-update effect below would no-op and the source would otherwise stay empty.
+  const latestDataRef = useRef({
     incidents: incidentsData,
     vehicles: vehiclesData,
     hazardZones: hazardZonesData,
@@ -298,7 +305,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
       if (!map.getSource('accessibility-source')) {
         map.addSource('accessibility-source', {
           type: 'geojson',
-          data: initialDataRef.current.accessibility,
+          data: latestDataRef.current.accessibility,
         });
 
         (Object.keys(ACCESSIBILITY_THEME) as Array<keyof typeof ACCESSIBILITY_THEME>).forEach((status) => {
@@ -356,7 +363,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
       if (!map.getSource('hazard-zones-source')) {
         map.addSource('hazard-zones-source', {
           type: 'geojson',
-          data: initialDataRef.current.hazardZones,
+          data: latestDataRef.current.hazardZones,
         });
 
         map.addLayer({
@@ -409,7 +416,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
       if (!map.getSource('incidents-source')) {
         map.addSource('incidents-source', {
           type: 'geojson',
-          data: initialDataRef.current.incidents,
+          data: latestDataRef.current.incidents,
         });
 
         map.addLayer({
@@ -473,7 +480,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
       if (!map.getSource('vehicles-source')) {
         map.addSource('vehicles-source', {
           type: 'geojson',
-          data: initialDataRef.current.vehicles,
+          data: latestDataRef.current.vehicles,
         });
 
         map.addLayer({
@@ -567,6 +574,17 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
       );
     }
   }, [showHazardZones]);
+
+  // Keep the latest-data ref current so setupLayers (which runs once on 'load')
+  // always seeds sources from the freshest snapshot. Runs after every render.
+  useEffect(() => {
+    latestDataRef.current = {
+      incidents: incidentsData,
+      vehicles: vehiclesData,
+      hazardZones: hazardZonesData,
+      accessibility: accessibilityData,
+    };
+  });
 
   // Update Data Sources
   useEffect(() => {
