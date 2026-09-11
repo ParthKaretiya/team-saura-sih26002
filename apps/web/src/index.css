@@ -1139,3 +1139,41 @@ html, body, #root {
     border-right: 1px solid var(--border-panel);
   }
 }
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Indeterminate progress: a highlight sweeps across the track without
+   implying a percentage complete. Used while an async request is in flight
+   and the backend reports no real per-stage progress — so we never fake one. */
+@keyframes indeterminate-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+.loading-indeterminate-track {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background-color: rgba(51, 65, 85, 0.6);
+  overflow: hidden;
+}
+
+.loading-indeterminate-track::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #38BDF8, transparent);
+  animation: indeterminate-sweep 1.15s ease-in-out infinite;
+}
