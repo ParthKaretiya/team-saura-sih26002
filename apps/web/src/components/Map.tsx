@@ -100,7 +100,6 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
   };
 
   const raiseRouteLayers = (map: maplibregl.Map) => {
-    const beforeId = map.getLayer('hazard-zones-circles') ? 'hazard-zones-circles' : undefined;
     const orderedLayers = [
       'baseline-route-casing',
       'baseline-route-line',
@@ -110,11 +109,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
     ];
     orderedLayers.forEach((layerId) => {
       if (!map.getLayer(layerId)) return;
-      if (beforeId) {
-        map.moveLayer(layerId, beforeId);
-      } else {
-        map.moveLayer(layerId);
-      }
+      map.moveLayer(layerId);
     });
   };
 
