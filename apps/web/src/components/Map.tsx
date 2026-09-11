@@ -80,6 +80,11 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
     accessibility: accessibilityData,
   });
 
+  const routeDataRef = useRef<{
+    selected: CandidateRouteProfile | null;
+    baseline: CandidateRouteProfile | null;
+  }>({ selected: null, baseline: null });
+
   const getResponsivePadding = (driver: boolean) => {
     if (driver) {
       return { top: 150, bottom: 240, left: 40, right: 40 };
@@ -517,6 +522,10 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
         map.on('mouseenter', 'vehicles-circles', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'vehicles-circles', () => { map.getCanvas().style.cursor = ''; });
       }
+
+      if (routeDataRef.current.selected && routeDataRef.current.baseline) {
+        renderRouteData(routeDataRef.current.selected, routeDataRef.current.baseline);
+      }
     };
 
     map.on('load', setupLayers);
@@ -531,6 +540,7 @@ export const MapComponent = forwardRef<MapHandle, MapProps>(function MapComponen
 
   // Update Routes and Fit Bounds when route props or view mode change
   useEffect(() => {
+    routeDataRef.current = { selected: selectedRoute, baseline: baselineRoute };
     if (!mapRef.current) return;
     mapRef.current.resize();
     if (selectedRoute && baselineRoute) {
