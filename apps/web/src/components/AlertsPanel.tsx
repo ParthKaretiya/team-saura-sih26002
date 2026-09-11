@@ -151,7 +151,7 @@ export default function AlertsPanel({
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 9, fontWeight: 800, color: accentColor, textTransform: 'uppercase' }}>
-                    {alert.severity} · {alert.category.replace('_', ' ')}
+                    {alert.severity} · {alert.category.replace(/_/g, ' ')}
                   </span>
                   {alert.routeCandidateId && (
                     <span style={{ fontSize: 9, fontWeight: 700, color: '#93C5FD', backgroundColor: 'rgba(37, 99, 235, 0.3)', padding: '1px 4px', borderRadius: 3 }}>
