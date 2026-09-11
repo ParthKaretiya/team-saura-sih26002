@@ -537,26 +537,31 @@ html, body, #root {
   font-family: var(--font-mono);
 }
 
-.driver-stage {
-  flex: 1;
-  min-height: 0;
+.driver-map-top {
+  flex-shrink: 0;
+  padding: 10px 12px 0;
+  pointer-events: auto;
+}
+
+.driver-map-bottom {
+  margin-top: auto;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 12px 10px;
   pointer-events: none;
 }
 
-.driver-maneuver-overlay {
-  flex-shrink: 0;
-  padding: 0 12px 10px;
+.driver-map-bottom > * {
   pointer-events: auto;
 }
 
 .driver-sheet {
-  flex-shrink: 0;
-  max-height: 46%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 0 12px 12px;
+  padding: 12px;
   pointer-events: auto;
 }
 
@@ -564,6 +569,189 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.driver-maneuver-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-panel);
+  border-left: 4px solid var(--accent-blue-light);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+
+.driver-maneuver-context {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.driver-maneuver-then {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+}
+
+.driver-then-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.driver-then-glyph {
+  color: var(--accent-blue-light);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.driver-then-text {
+  flex: 1;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.driver-then-meta {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.driver-eta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: rgba(11, 15, 23, 0.96);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-panel);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+
+.driver-eta-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.driver-eta-value {
+  font-size: 22px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: #FFFFFF;
+  line-height: 1;
+}
+
+.driver-eta-unit,
+.driver-eta-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.driver-eta-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-subtle);
+}
+
+.driver-safety-banner {
+  border-radius: 12px;
+  border: 1px solid;
+  border-left-width: 4px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow-lg);
+}
+
+.driver-safety-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.driver-safety-icon {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.driver-safety-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.driver-safety-title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+.driver-safety-message {
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.9;
+}
+
+.driver-safety-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.driver-safety-btn {
+  flex: 1;
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  color: inherit;
+}
+
+.driver-safety-btn-primary {
+  background: #059669;
+  border-color: #059669;
+  color: #FFFFFF;
+}
+
+.driver-safety-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.driver-safety-safe {
+  color: #34D399;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.driver-safety-warn {
+  color: #FCD34D;
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.driver-safety-hazard {
+  color: #FCA5A5;
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .driver-card {
@@ -929,26 +1117,25 @@ html, body, #root {
 }
 
 @media (min-width: 821px) {
-  .driver-stage {
-    align-items: flex-start;
-  }
-
-  .driver-maneuver-overlay {
-    width: 420px;
-    max-width: 420px;
-    padding: 16px 16px 10px;
-  }
-
+  .driver-map-top,
+  .driver-map-bottom,
   .driver-sheet {
-    width: 420px;
-    max-width: 420px;
-    max-height: none;
-    padding: 0 16px 16px;
+    width: 440px;
+    max-width: 440px;
+  }
+
+  .driver-map-top {
+    align-self: flex-start;
+  }
+
+  .driver-map-bottom {
+    align-self: flex-start;
   }
 
   .driver-bottom-nav {
-    width: 420px;
-    max-width: 420px;
+    width: 440px;
+    max-width: 440px;
+    align-self: flex-start;
     border-right: 1px solid var(--border-panel);
   }
 }

@@ -5,7 +5,10 @@ import type {
   RerouteEvaluationResult,
 } from '../../types/api';
 import DriverHeader from './DriverHeader';
+import DriverManeuverCard from './DriverManeuverCard';
 import DriverNavigationCard from './DriverNavigationCard';
+import DriverEtaBar from './DriverEtaBar';
+import DriverSafetyBanner from './DriverSafetyBanner';
 import DriverRouteSummary from './DriverRouteSummary';
 import DriverSafetyStatus from './DriverSafetyStatus';
 import DriverBottomNav from './DriverBottomNav';
@@ -38,19 +41,33 @@ export default function DriverMode({
 }: DriverModeProps) {
   const [activeTab, setActiveTab] = useState<DriverTab>('navigate');
 
-  const hasRoute = Boolean(optimization);
+  const showMapOverlay = Boolean(optimization) && activeTab === 'navigate';
 
   return (
     <div className="driver-shell">
       <DriverHeader isLive={isLive} />
 
-      <div className="driver-stage">
-        {hasRoute && optimization && activeTab === 'navigate' && (
-          <div className="driver-maneuver-overlay">
-            <DriverNavigationCard selectedRoute={optimization.selectedRoute} />
+      {showMapOverlay && optimization ? (
+        <>
+          <div className="driver-map-top">
+            <DriverManeuverCard
+              selectedRoute={optimization.selectedRoute}
+              destination={optimization.destination}
+            />
           </div>
-        )}
 
+          <div className="driver-map-bottom">
+            <DriverSafetyBanner
+              selectedRoute={optimization.selectedRoute}
+              alerts={alerts}
+              onViewSafety={() => setActiveTab('safety')}
+              onCheckReroute={onCheckReroute}
+              canReroute={!isCheckingReroute}
+            />
+            <DriverEtaBar selectedRoute={optimization.selectedRoute} />
+          </div>
+        </>
+      ) : (
         <div className="driver-sheet">
           {!optimization ? (
             <div className="driver-card driver-empty">
@@ -62,24 +79,15 @@ export default function DriverMode({
                 Go to Route Planner
               </button>
             </div>
-          ) : activeTab === 'navigate' ? (
+          ) : activeTab === 'route' ? (
             <div className="driver-stack">
               <DriverRouteSummary
                 selectedRoute={optimization.selectedRoute}
                 preference={optimization.preference}
                 strategy={optimization.optimization.strategy}
               />
-              <DriverSafetyStatus
-                selectedRoute={optimization.selectedRoute}
-                safetyStatus={optimization.safetyIntelligence}
-              />
+              <DriverNavigationCard selectedRoute={optimization.selectedRoute} />
             </div>
-          ) : activeTab === 'route' ? (
-            <DriverRouteSummary
-              selectedRoute={optimization.selectedRoute}
-              preference={optimization.preference}
-              strategy={optimization.optimization.strategy}
-            />
           ) : activeTab === 'safety' ? (
             <div className="driver-stack">
               <DriverSafetyStatus
@@ -94,21 +102,34 @@ export default function DriverMode({
                 hasCalculatedRoute
               />
             </div>
-          ) : (
+          ) : activeTab === 'alerts' ? (
             <AlertsPanel
               alerts={alerts}
               isUnavailable={alertsUnavailable}
               hasCalculatedRoute
               onRecalculateSaferRoute={onCheckReroute}
             />
+          ) : (
+            <div className="driver-stack">
+              <div className="driver-card">
+                <div className="driver-nav-header">
+                  <span className="driver-nav-title">DRIVER SESSION</span>
+                </div>
+                <div className="driver-route-foot" style={{ marginBottom: 12 }}>
+                  <span>Switch back to the Command Center to adjust routes or settings.</span>
+                </div>
+                <button className="driver-empty-btn" onClick={onExit}>
+                  Exit Driver Mode
+                </button>
+              </div>
+            </div>
           )}
         </div>
-      </div>
+      )}
 
       <DriverBottomNav
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        onExit={onExit}
         alertCount={alerts.length}
       />
     </div>

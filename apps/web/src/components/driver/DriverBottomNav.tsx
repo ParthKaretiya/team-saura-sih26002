@@ -1,9 +1,8 @@
-export type DriverTab = 'navigate' | 'route' | 'safety' | 'alerts';
+export type DriverTab = 'navigate' | 'route' | 'safety' | 'alerts' | 'more';
 
 interface DriverBottomNavProps {
   activeTab: DriverTab;
   onTabChange: (tab: DriverTab) => void;
-  onExit: () => void;
   alertCount: number;
 }
 
@@ -12,14 +11,10 @@ const TABS: { key: DriverTab; label: string; icon: string }[] = [
   { key: 'route', label: 'Route', icon: '🛣️' },
   { key: 'safety', label: 'Safety', icon: '🛡️' },
   { key: 'alerts', label: 'Alerts', icon: '🔔' },
+  { key: 'more', label: 'More', icon: '⋯' },
 ];
 
-export default function DriverBottomNav({
-  activeTab,
-  onTabChange,
-  onExit,
-  alertCount,
-}: DriverBottomNavProps) {
+export default function DriverBottomNav({ activeTab, onTabChange, alertCount }: DriverBottomNavProps) {
   return (
     <nav className="driver-bottom-nav" aria-label="Driver Mode Navigation">
       {TABS.map((tab) => (
@@ -36,11 +31,6 @@ export default function DriverBottomNav({
           )}
         </button>
       ))}
-
-      <button onClick={onExit} className="driver-nav-btn driver-nav-exit" title="Exit Driver Mode">
-        <span className="driver-nav-icon">⏻</span>
-        <span className="driver-nav-label">Exit</span>
-      </button>
     </nav>
   );
 }

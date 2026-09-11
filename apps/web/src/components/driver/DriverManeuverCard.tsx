@@ -1,7 +1,8 @@
 import type { CandidateRouteProfile } from '../../types/api';
 
-interface DriverNavigationCardProps {
+interface DriverManeuverCardProps {
   selectedRoute: CandidateRouteProfile;
+  destination: { latitude: number; longitude: number };
 }
 
 function formatDuration(seconds: number): string {
@@ -32,39 +33,43 @@ function maneuverGlyph(text: string | undefined): string {
   return '↑';
 }
 
-export default function DriverNavigationCard({ selectedRoute }: DriverNavigationCardProps) {
+export default function DriverManeuverCard({ selectedRoute, destination }: DriverManeuverCardProps) {
   const instructions = selectedRoute.instructions ?? [];
+  const primary = instructions[0];
+  const next = instructions[1];
 
-  if (instructions.length === 0) {
+  if (!primary) {
     return (
-      <div className="driver-card">
-        <div className="driver-nav-header">
-          <span className="driver-nav-title">FULL GUIDANCE</span>
-        </div>
+      <div className="driver-maneuver-card">
         <div className="driver-nav-empty">No turn-by-turn guidance available for this route.</div>
       </div>
     );
   }
 
   return (
-    <div className="driver-card">
-      <div className="driver-nav-header">
-        <span className="driver-nav-title">FULL GUIDANCE</span>
-        <span className="driver-nav-steps">{instructions.length} steps</span>
+    <div className="driver-maneuver-card">
+      <div className="driver-maneuver-arrow" aria-hidden="true">
+        {maneuverGlyph(primary.text)}
       </div>
 
-      <ol className="driver-nav-steps-list">
-        {instructions.map((step, index) => (
-          <li key={`${index}-${step.text}`} className="driver-nav-step">
-            <span className="driver-nav-step-glyph">{maneuverGlyph(step.text)}</span>
-            <span className="driver-nav-step-text">{step.text}</span>
-            <span className="driver-nav-step-meta">{formatDistance(step.distanceMeters)}</span>
-          </li>
-        ))}
-      </ol>
+      <div className="driver-maneuver-body">
+        <div className="driver-maneuver-distance">{formatDistance(primary.distanceMeters)}</div>
+        <div className="driver-maneuver-text">{primary.text}</div>
+        <div className="driver-maneuver-context">
+          towards {destination.latitude.toFixed(3)}, {destination.longitude.toFixed(3)} ·{' '}
+          {formatDuration(primary.durationSeconds)}
+        </div>
 
-      <div className="driver-nav-destination">
-        Total guidance time: {formatDuration(selectedRoute.durationSeconds)}
+        {next && (
+          <div className="driver-maneuver-then">
+            <span className="driver-then-label">Then</span>
+            <span className="driver-then-glyph" aria-hidden="true">
+              {maneuverGlyph(next.text)}
+            </span>
+            <span className="driver-then-text">{next.text}</span>
+            <span className="driver-then-meta">{formatDistance(next.distanceMeters)}</span>
+          </div>
+        )}
       </div>
     </div>
   );
