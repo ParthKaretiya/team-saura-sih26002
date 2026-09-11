@@ -320,6 +320,7 @@ export default function App() {
           optimization={optimization}
           alerts={alerts}
           alertsUnavailable={alertsUnavailable}
+          isLive={isLive}
           isCheckingReroute={isCheckingReroute}
           rerouteResult={rerouteResult}
           rerouteError={rerouteError}
