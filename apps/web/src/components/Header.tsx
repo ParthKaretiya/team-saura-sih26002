@@ -13,6 +13,8 @@ interface HeaderProps {
   setShowRightPanel: Dispatch<SetStateAction<boolean>>;
   showLegend: boolean;
   setShowLegend: Dispatch<SetStateAction<boolean>>;
+  viewMode: 'operations' | 'driver';
+  onToggleViewMode: () => void;
 }
 
 export default function Header({
@@ -28,6 +30,8 @@ export default function Header({
   setShowRightPanel,
   showLegend,
   setShowLegend,
+  viewMode,
+  onToggleViewMode,
 }: HeaderProps) {
   return (
     <header className="command-header">
@@ -45,7 +49,7 @@ export default function Header({
       {/* Center Operational Telemetry (Desktop / Tablet) */}
       <div
         style={{
-          display: 'flex',
+          display: viewMode === 'driver' ? 'none' : 'flex',
           alignItems: 'center',
           gap: 12,
         }}
@@ -81,56 +85,77 @@ export default function Header({
 
       {/* Right Actions & Live Status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {/* Toggle Panel Buttons for Quick Visibility */}
-        <button
-          onClick={() => setShowLeftPanel(!showLeftPanel)}
-          title={showLeftPanel ? 'Hide Route Planner' : 'Show Route Planner'}
-          style={{
-            padding: '5px 9px',
-            background: showLeftPanel ? 'rgba(37, 99, 235, 0.2)' : 'rgba(30, 41, 59, 0.8)',
-            border: `1px solid ${showLeftPanel ? '#3B82F6' : '#334155'}`,
-            color: showLeftPanel ? '#93C5FD' : '#94A3B8',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: 11,
-            fontWeight: 600,
-          }}
-        >
-          Planner
-        </button>
+        {viewMode === 'operations' && (
+          <>
+            {/* Toggle Panel Buttons for Quick Visibility */}
+            <button
+              onClick={() => setShowLeftPanel(!showLeftPanel)}
+              title={showLeftPanel ? 'Hide Route Planner' : 'Show Route Planner'}
+              style={{
+                padding: '5px 9px',
+                background: showLeftPanel ? 'rgba(37, 99, 235, 0.2)' : 'rgba(30, 41, 59, 0.8)',
+                border: `1px solid ${showLeftPanel ? '#3B82F6' : '#334155'}`,
+                color: showLeftPanel ? '#93C5FD' : '#94A3B8',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            >
+              Planner
+            </button>
+
+            <button
+              onClick={() => setShowRightPanel(!showRightPanel)}
+              title={showRightPanel ? 'Hide Risk & Intelligence' : 'Show Risk & Intelligence'}
+              style={{
+                padding: '5px 9px',
+                background: showRightPanel ? 'rgba(37, 99, 235, 0.2)' : 'rgba(30, 41, 59, 0.8)',
+                border: `1px solid ${showRightPanel ? '#3B82F6' : '#334155'}`,
+                color: showRightPanel ? '#93C5FD' : '#94A3B8',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            >
+              Intelligence
+            </button>
+
+            <button
+              onClick={() => setShowLegend(!showLegend)}
+              title={showLegend ? 'Hide Map Legend' : 'Show Map Legend'}
+              style={{
+                padding: '5px 9px',
+                background: showLegend ? 'rgba(139, 92, 246, 0.2)' : 'rgba(30, 41, 59, 0.8)',
+                border: `1px solid ${showLegend ? '#8B5CF6' : '#334155'}`,
+                color: showLegend ? '#C4B5FD' : '#94A3B8',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            >
+              Legend
+            </button>
+          </>
+        )}
 
         <button
-          onClick={() => setShowRightPanel(!showRightPanel)}
-          title={showRightPanel ? 'Hide Risk & Intelligence' : 'Show Risk & Intelligence'}
+          onClick={onToggleViewMode}
+          title={viewMode === 'operations' ? 'Switch to Driver Mode' : 'Switch to Command Center'}
           style={{
-            padding: '5px 9px',
-            background: showRightPanel ? 'rgba(37, 99, 235, 0.2)' : 'rgba(30, 41, 59, 0.8)',
-            border: `1px solid ${showRightPanel ? '#3B82F6' : '#334155'}`,
-            color: showRightPanel ? '#93C5FD' : '#94A3B8',
+            padding: '5px 10px',
+            background: viewMode === 'driver' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(37, 99, 235, 0.2)',
+            border: `1px solid ${viewMode === 'driver' ? '#10B981' : '#3B82F6'}`,
+            color: viewMode === 'driver' ? '#34D399' : '#93C5FD',
             borderRadius: 6,
             cursor: 'pointer',
             fontSize: 11,
-            fontWeight: 600,
+            fontWeight: 700,
           }}
         >
-          Intelligence
-        </button>
-
-        <button
-          onClick={() => setShowLegend(!showLegend)}
-          title={showLegend ? 'Hide Map Legend' : 'Show Map Legend'}
-          style={{
-            padding: '5px 9px',
-            background: showLegend ? 'rgba(139, 92, 246, 0.2)' : 'rgba(30, 41, 59, 0.8)',
-            border: `1px solid ${showLegend ? '#8B5CF6' : '#334155'}`,
-            color: showLegend ? '#C4B5FD' : '#94A3B8',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: 11,
-            fontWeight: 600,
-          }}
-        >
-          Legend
+          {viewMode === 'driver' ? 'Command Center' : 'Driver Mode'}
         </button>
 
         <div className={`status-pill ${isLive ? 'live' : 'disconnected'}`} title={`Last refreshed: ${lastUpdated}`}>

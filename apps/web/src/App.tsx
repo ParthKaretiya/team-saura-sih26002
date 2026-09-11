@@ -13,6 +13,7 @@ import ReroutePanel from './components/ReroutePanel';
 import MapLegend from './components/MapLegend';
 import LoadingIndicator from './components/LoadingIndicator';
 import ErrorMessage from './components/ErrorMessage';
+import DriverMode from './components/driver/DriverMode';
 import type {
   IncidentFeatureCollection,
   VehicleFeatureCollection,
@@ -52,6 +53,10 @@ export default function App() {
 
   // Mobile navigation tab
   const [activeMobileTab, setActiveMobileTab] = useState<MobileTab>('map');
+
+  // View mode: operations command center vs driver mode
+  const [viewMode, setViewMode] = useState<'operations' | 'driver'>('operations');
+  const isDriverMode = viewMode === 'driver';
 
   // Route Planning States (Default to Guwahati -> Shillong)
   const [originInput, setOriginInput] = useState<string>('26.1445, 91.7362');
@@ -279,6 +284,8 @@ export default function App() {
         setShowRightPanel={setShowRightPanel}
         showLegend={showLegend}
         setShowLegend={setShowLegend}
+        viewMode={viewMode}
+        onToggleViewMode={() => setViewMode((prev) => (prev === 'driver' ? 'operations' : 'driver'))}
       />
 
       {/* 2. MapLibre Hero Viewport */}
@@ -295,7 +302,7 @@ export default function App() {
         />
 
         {/* 3. Floating Operational Map Legend */}
-        {showLegend && (
+        {showLegend && !isDriverMode && (
           <MapLegend
             showHazardZones={showHazardZones}
             setShowHazardZones={setShowHazardZones}
@@ -307,8 +314,22 @@ export default function App() {
         )}
       </div>
 
+      {/* Driver Mode Shell */}
+      {isDriverMode && (
+        <DriverMode
+          optimization={optimization}
+          alerts={alerts}
+          alertsUnavailable={alertsUnavailable}
+          isCheckingReroute={isCheckingReroute}
+          rerouteResult={rerouteResult}
+          rerouteError={rerouteError}
+          onCheckReroute={handleCheckReroute}
+          onExit={() => setViewMode('operations')}
+        />
+      )}
+
       {/* 4. Left Intelligence Dock (Route Planning, Summary, Comparison & Rationale) */}
-      {showLeftPanel && (
+      {showLeftPanel && !isDriverMode && (
         <aside
           className="dock-panel left"
           style={{
@@ -363,7 +384,7 @@ export default function App() {
       )}
 
       {/* 5. Right Intelligence Dock (AI Risk, Accessibility, Alerts, Reroute Advisor) */}
-      {showRightPanel && (
+      {showRightPanel && !isDriverMode && (
         <aside
           className="dock-panel right"
           style={{
@@ -425,7 +446,7 @@ export default function App() {
       )}
 
       {/* 6. Mobile Tab Navigation Bar */}
-      <nav className="mobile-nav-bar" aria-label="Mobile Navigation">
+      <nav className="mobile-nav-bar" aria-label="Mobile Navigation" style={{ display: isDriverMode ? 'none' : undefined }}>
         <button
           onClick={() => setActiveMobileTab('planner')}
           className={`mobile-nav-btn ${activeMobileTab === 'planner' ? 'active' : ''}`}

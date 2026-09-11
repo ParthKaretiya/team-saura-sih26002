@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from 'react';
 import {
   SEVERITY_THEME,
   ACCESSIBILITY_THEME,
@@ -8,7 +9,7 @@ import {
 
 interface MapLegendProps {
   showHazardZones: boolean;
-  setShowHazardZones: (val: boolean) => void;
+  setShowHazardZones: Dispatch<SetStateAction<boolean>>;
   hazardZoneCount: number;
   incidentCount: number;
   vehicleCount: number;
