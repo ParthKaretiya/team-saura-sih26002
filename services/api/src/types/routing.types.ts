@@ -91,6 +91,23 @@ export interface CandidateRouteProfile {
   accessibility?: CandidateAccessibility;
 }
 
+export interface RouteSelectionExplanation {
+  summary: string;
+  selectedRouteName: string;
+  isBaseline: boolean;
+  baselineRiskScore: number;
+  baselineRiskLevel: RiskLevel;
+  selectedRiskScore: number;
+  selectedRiskLevel: RiskLevel;
+  hazardReductionPercent: number;
+  detourKm: number;
+  detourMinutes: number;
+  detourRatio: number;
+  accessibilityStatus: RouteAccessibility;
+  corridorStatusSummary?: string;
+  factors: string[];
+}
+
 export interface RouteOptimizationResult {
   origin: Coordinate;
   destination: Coordinate;
@@ -110,8 +127,22 @@ export interface RouteOptimizationResult {
     hazardReductionPercent: number;
     additionalDistanceKm: number;
     additionalDurationMinutes: number;
+    explanation?: RouteSelectionExplanation;
   };
   accessibility?: RouteAccessibilitySummary;
+}
+
+export interface RerouteExplanation {
+  summary: string;
+  currentRiskScore: number;
+  currentRiskLevel: RiskLevel;
+  recommendedRiskScore?: number;
+  recommendedRiskLevel?: RiskLevel;
+  hazardReductionPercent?: number;
+  additionalDistanceKm?: number;
+  additionalDurationMinutes?: number;
+  detourRatio?: number;
+  triggerReason: string;
 }
 
 export interface RerouteEvaluationResult {
@@ -133,7 +164,11 @@ export interface RerouteEvaluationResult {
     hazardReductionPercent: number;
     additionalDistanceMeters: number;
     additionalDurationSeconds: number;
+    additionalDistanceKm?: number;
+    additionalDurationMinutes?: number;
+    detourRatio?: number;
   };
   evaluatedCandidatesCount: number;
   accessibility?: RouteAccessibilitySummary;
+  explanation?: RerouteExplanation;
 }
