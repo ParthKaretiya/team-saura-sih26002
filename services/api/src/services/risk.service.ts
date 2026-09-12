@@ -380,7 +380,7 @@ export class RiskService {
   }
 
   /**
-   * Samples a highway LineString every ~5km and aggregates corridor risk profile.
+   * Samples a highway LineString along the route (configured interval, default 3km) and aggregates corridor risk profile.
    */
   async evaluateRouteRisk(
     coordinates: Array<[longitude: number, latitude: number]>,
@@ -390,7 +390,9 @@ export class RiskService {
       throw new Error('Route coordinates must contain at least 2 points.');
     }
 
-    // 1. Sample coordinates approximately every 5km along route
+    const samplingIntervalKm = RISK_CONFIG.samplingIntervalKm ?? 3.0;
+
+    // 1. Sample coordinates along route
     const sampledPoints: Array<{ coord: [number, number]; distAlongKm: number }> = [];
     let accumulatedDistKm = 0;
     sampledPoints.push({ coord: coordinates[0], distAlongKm: 0 });
@@ -409,7 +411,7 @@ export class RiskService {
         curr[0]
       );
 
-      if (distFromLastSampleKm >= 5.0 || i === coordinates.length - 1) {
+      if (distFromLastSampleKm >= samplingIntervalKm || i === coordinates.length - 1) {
         sampledPoints.push({ coord: curr, distAlongKm: Math.round(accumulatedDistKm * 10) / 10 });
         lastSampledCoord = curr;
       }

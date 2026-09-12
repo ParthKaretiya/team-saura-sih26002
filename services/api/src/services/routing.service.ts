@@ -137,12 +137,30 @@ export class RoutingService {
       }
     }
 
+    // 3. Weather delay calculation for high/critical rainfall zones
+    let weatherDelaySeconds = 0;
+    if (riskSummary.waypoints && riskSummary.waypoints.length > 0) {
+      const segmentDuration = route.durationSeconds / riskSummary.waypoints.length;
+      for (const wp of riskSummary.waypoints) {
+        if (wp.primaryFactor === 'Rainfall') {
+          if (wp.level === 'CRITICAL') {
+            weatherDelaySeconds += segmentDuration * (RISK_CONFIG.weatherDelayMultipliers.CRITICAL - 1.0);
+          } else if (wp.level === 'HIGH') {
+            weatherDelaySeconds += segmentDuration * (RISK_CONFIG.weatherDelayMultipliers.HIGH - 1.0);
+          }
+        }
+      }
+    }
+    const roundedWeatherDelay = Math.round(weatherDelaySeconds);
+    const effectiveDurationSeconds = route.durationSeconds + roundedWeatherDelay;
+
     return {
       candidateId: `candidate_${index + 1}`,
       name: isBaseline ? 'Baseline Highway Route (Fastest)' : `Alternative Corridor ${index + 1}`,
       isBaseline,
       distanceMeters: route.distanceMeters,
-      durationSeconds: route.durationSeconds,
+      durationSeconds: effectiveDurationSeconds,
+      ...(roundedWeatherDelay > 0 ? { weatherDelaySeconds: roundedWeatherDelay } : {}),
       geometry: route.geometry,
       instructions: route.instructions,
       risk: riskSummary,

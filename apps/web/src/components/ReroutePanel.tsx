@@ -6,6 +6,7 @@ interface ReroutePanelProps {
   rerouteResult: RerouteEvaluationResult | null;
   rerouteError: string | null;
   hasCalculatedRoute: boolean;
+  driverMode?: boolean;
 }
 
 export default function ReroutePanel({
@@ -14,15 +15,16 @@ export default function ReroutePanel({
   rerouteResult,
   rerouteError,
   hasCalculatedRoute,
+  driverMode = false,
 }: ReroutePanelProps) {
   return (
     <div className="intel-card">
       <div className="intel-card-header">
         <span className="intel-card-title">
           <span>🔄</span>
-          <span>Dynamic Reroute Advisor</span>
+          <span>{driverMode ? 'Safer Reroute Advisor' : 'Dynamic Reroute Advisor'}</span>
         </span>
-        <span style={{ fontSize: 10, color: '#94A3B8' }}>Contingency Scan</span>
+        <span style={{ fontSize: 10, color: '#94A3B8' }}>{driverMode ? 'Safety Scan' : 'Contingency Scan'}</span>
       </div>
 
       <button
@@ -62,16 +64,18 @@ export default function ReroutePanel({
                 animation: 'spin 0.8s linear infinite',
               }}
             />
-            <span>EVALUATING CONTINGENCY CANDIDATES...</span>
+            <span>{driverMode ? 'CHECKING FOR SAFER ROUTE...' : 'EVALUATING CONTINGENCY CANDIDATES...'}</span>
           </>
         ) : (
-          <span>CHECK FOR SAFER REROUTE</span>
+          <span>{driverMode ? 'FIND A SAFER ROUTE' : 'CHECK FOR SAFER REROUTE'}</span>
         )}
       </button>
 
       {!hasCalculatedRoute && (
         <div style={{ marginTop: 6, fontSize: 10, color: '#64748B', textAlign: 'center' }}>
-          Calculate an active route to enable dynamic rerouting analysis.
+          {driverMode
+            ? 'Start a route to check for safer alternatives.'
+            : 'Calculate an active route to enable dynamic rerouting analysis.'}
         </div>
       )}
 

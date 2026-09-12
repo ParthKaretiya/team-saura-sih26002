@@ -3,6 +3,7 @@ import type { CandidateRouteProfile } from '../../types/api';
 interface DriverManeuverCardProps {
   selectedRoute: CandidateRouteProfile;
   destination: { latitude: number; longitude: number };
+  destinationLabel?: string;
 }
 
 function formatDuration(seconds: number): string {
@@ -33,7 +34,10 @@ function maneuverGlyph(text: string | undefined): string {
   return '↑';
 }
 
-export default function DriverManeuverCard({ selectedRoute, destination }: DriverManeuverCardProps) {
+export default function DriverManeuverCard({
+  selectedRoute,
+  destinationLabel,
+}: DriverManeuverCardProps) {
   const instructions = selectedRoute.instructions ?? [];
   const primary = instructions[0];
   const next = instructions[1];
@@ -46,6 +50,8 @@ export default function DriverManeuverCard({ selectedRoute, destination }: Drive
     );
   }
 
+  const targetName = destinationLabel || 'Destination';
+
   return (
     <div className="driver-maneuver-card">
       <div className="driver-maneuver-arrow" aria-hidden="true">
@@ -56,8 +62,7 @@ export default function DriverManeuverCard({ selectedRoute, destination }: Drive
         <div className="driver-maneuver-distance">{formatDistance(primary.distanceMeters)}</div>
         <div className="driver-maneuver-text">{primary.text}</div>
         <div className="driver-maneuver-context">
-          towards {destination.latitude.toFixed(3)}, {destination.longitude.toFixed(3)} ·{' '}
-          {formatDuration(primary.durationSeconds)}
+          towards {targetName} · {formatDuration(primary.durationSeconds)}
         </div>
 
         {next && (

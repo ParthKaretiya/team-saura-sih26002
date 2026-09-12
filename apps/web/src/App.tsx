@@ -14,6 +14,9 @@ import MapLegend from './components/MapLegend';
 import LoadingIndicator from './components/LoadingIndicator';
 import ErrorMessage from './components/ErrorMessage';
 import DriverMode from './components/driver/DriverMode';
+import RoleSelect from './components/RoleSelect';
+import { PRESET_CORRIDORS } from './config/map-theme';
+import { computeLiveTripProgress, type LiveTripProgress } from './utils/eta';
 import type {
   IncidentFeatureCollection,
   VehicleFeatureCollection,
@@ -54,9 +57,59 @@ export default function App() {
   // Mobile navigation tab
   const [activeMobileTab, setActiveMobileTab] = useState<MobileTab>('map');
 
-  // View mode: operations command center vs driver mode
-  const [viewMode, setViewMode] = useState<'operations' | 'driver'>('operations');
+  // View mode: operations command center vs driver mode (persisted in localStorage)
+  const [viewMode, setViewMode] = useState<'operations' | 'driver' | null>(() => {
+    try {
+      const saved = localStorage.getItem('sauraroute_view_mode');
+      if (saved === 'operations' || saved === 'driver') {
+        return saved;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
   const isDriverMode = viewMode === 'driver';
+
+  // Human-readable destination label for driver turn-by-turn guidance
+  const [destinationLabel, setDestinationLabel] = useState<string>('Shillong, Meghalaya');
+
+  // Role selection & mode toggles with persistence
+  const handleSelectRole = (mode: 'operations' | 'driver') => {
+    try {
+      localStorage.setItem('sauraroute_view_mode', mode);
+    } catch {
+      // ignore
+    }
+    setViewMode(mode);
+  };
+
+  const handleToggleViewMode = () => {
+    const nextMode = viewMode === 'driver' ? 'operations' : 'driver';
+    try {
+      localStorage.setItem('sauraroute_view_mode', nextMode);
+    } catch {
+      // ignore
+    }
+    setViewMode(nextMode);
+    if (nextMode === 'driver' && optimization) {
+      handleCalculateRoute(
+        `${optimization.origin.latitude}, ${optimization.origin.longitude}`,
+        `${optimization.destination.latitude}, ${optimization.destination.longitude}`,
+        destinationLabel,
+        'cargo_truck'
+      );
+    }
+  };
+
+  const handleExitDriverMode = () => {
+    try {
+      localStorage.setItem('sauraroute_view_mode', 'operations');
+    } catch {
+      // ignore
+    }
+    setViewMode('operations');
+  };
 
   // Route Planning States (Default to Guwahati -> Shillong)
   const [originInput, setOriginInput] = useState<string>('26.1445, 91.7362');
@@ -66,6 +119,32 @@ export default function App() {
   const [isRouting, setIsRouting] = useState<boolean>(false);
   const [routingError, setRoutingError] = useState<string | null>(null);
   const [optimization, setOptimization] = useState<RouteOptimizationResult | null>(null);
+
+  // Live Driver Trip Progress State
+  const [tripStartTime, setTripStartTime] = useState<number | null>(null);
+  const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
+
+  // Simulated live driver trip progress ticker (1s)
+  useEffect(() => {
+    if (!optimization || !tripStartTime) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [optimization, tripStartTime]);
+
+  const liveProgress: LiveTripProgress | null =
+    optimization && tripStartTime
+      ? computeLiveTripProgress(
+          optimization.selectedRoute.distanceMeters,
+          optimization.selectedRoute.durationSeconds,
+          tripStartTime,
+          currentTime
+        )
+      : null;
 
   // Reroute Evaluation States
   const [isCheckingReroute, setIsCheckingReroute] = useState<boolean>(false);
@@ -154,10 +233,25 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Handle Route Calculation
-  const handleCalculateRoute = async (customOrigin?: string, customDest?: string) => {
+  // Handle Route Calculation (supports optional destination label for driver guidance)
+  const handleCalculateRoute = async (
+    customOrigin?: string,
+    customDest?: string,
+    customDestLabel?: string,
+    overrideProfile?: string
+  ) => {
     const origStr = customOrigin || originInput;
     const destStr = customDest || destInput;
+
+    if (customDestLabel) {
+      setDestinationLabel(customDestLabel);
+    } else {
+      const matched = PRESET_CORRIDORS.find((p) => p.destination === destStr);
+      if (matched) {
+        setDestinationLabel(matched.toLabel);
+      }
+    }
+
     setRoutingError(null);
     setIsRouting(true);
     setRerouteResult(null);
@@ -181,6 +275,7 @@ export default function App() {
 
     const [originLat, originLon] = origParts;
     const [destinationLat, destinationLon] = destParts;
+    const routingProfile = overrideProfile || (viewMode === 'driver' || isDriverMode ? 'cargo_truck' : 'car');
 
     try {
       const res = await fetch(`${API_BASE_URL}/routes/optimize`, {
@@ -190,6 +285,7 @@ export default function App() {
           origin: { latitude: originLat, longitude: originLon },
           destination: { latitude: destinationLat, longitude: destinationLon },
           routingPreference: preference,
+          routingOptions: { profile: routingProfile },
         }),
       });
 
@@ -203,6 +299,7 @@ export default function App() {
 
       const result = json.data as RouteOptimizationResult;
       setOptimization(result);
+      setTripStartTime(Date.now());
 
       if (mapHandleRef.current) {
         mapHandleRef.current.updateRoutesOnMap(result.selectedRoute, result.baselineRoute);
@@ -234,6 +331,7 @@ export default function App() {
       geometry: optimization.selectedRoute.geometry,
       instructions: optimization.selectedRoute.instructions,
     };
+    const routingProfile = viewMode === 'driver' || isDriverMode ? 'cargo_truck' : 'car';
 
     try {
       const res = await fetch(`${API_BASE_URL}/routes/reroute`, {
@@ -243,6 +341,7 @@ export default function App() {
           origin: optimization.origin,
           destination: optimization.destination,
           currentRoute,
+          routingOptions: { profile: routingProfile },
         }),
       });
 
@@ -284,8 +383,8 @@ export default function App() {
         setShowRightPanel={setShowRightPanel}
         showLegend={showLegend}
         setShowLegend={setShowLegend}
-        viewMode={viewMode}
-        onToggleViewMode={() => setViewMode((prev) => (prev === 'driver' ? 'operations' : 'driver'))}
+        viewMode={viewMode || 'operations'}
+        onToggleViewMode={handleToggleViewMode}
       />
 
       {/* 2. MapLibre Hero Viewport */}
@@ -326,7 +425,16 @@ export default function App() {
           rerouteResult={rerouteResult}
           rerouteError={rerouteError}
           onCheckReroute={handleCheckReroute}
-          onExit={() => setViewMode('operations')}
+          onExit={handleExitDriverMode}
+          onCalculate={handleCalculateRoute}
+          isRouting={isRouting}
+          routingError={routingError}
+          destinationLabel={destinationLabel}
+          onNewTrip={() => {
+            setOptimization(null);
+            setTripStartTime(null);
+          }}
+          liveProgress={liveProgress}
         />
       )}
 
@@ -481,6 +589,11 @@ export default function App() {
           <span>Corridors</span>
         </button>
       </nav>
+
+      {/* 7. Role Selection Screen (First Load) */}
+      {viewMode === null && (
+        <RoleSelect onSelectMode={handleSelectRole} />
+      )}
     </div>
   );
 }

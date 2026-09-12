@@ -3,16 +3,19 @@
 graphhopper:
   datareader.file: data/raw/north-eastern-zone-latest.osm.pbf
   graph.location: data/processed/graphhopper-cache
+  custom_models.directory: services/routing
 
   profiles:
     - name: car
       custom_model_files: [car.json]
+    - name: cargo_truck
+      custom_model_files: [truck_profile.json]
 
   # Flexible mode keeps the first routing spike simple and leaves room for
   # request-time custom models in a later approved phase.
   profiles_ch: []
   profiles_lm: []
-  graph.encoded_values: car_access, car_average_speed
+  graph.encoded_values: car_access, car_average_speed, road_access, hgv, max_weight, max_height, max_width, road_class, road_environment
   import.osm.ignored_highways: footway,cycleway,path,pedestrian,steps
   graph.dataaccess.default_type: RAM_STORE
   routing.timeout_ms: 300000

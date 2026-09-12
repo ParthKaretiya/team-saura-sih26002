@@ -12,7 +12,8 @@
     "test": "tsx src/tests/api.test.ts",
     "test:routing-optimization": "tsx src/tests/routing-optimization.test.ts",
     "test:accessibility": "tsx src/tests/accessibility.test.ts",
-    "test:routing-reliability": "tsx src/tests/routing-reliability.test.ts"
+    "test:routing-reliability": "tsx src/tests/routing-reliability.test.ts",
+    "test:truck-routing": "tsx src/tests/truck-routing.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

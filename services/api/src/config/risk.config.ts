@@ -40,6 +40,15 @@ export const RISK_CONFIG = {
     maxSearchRadiusKm: 15.0,
   },
 
+  // Spatial Risk Sampling Interval along route (km)
+  samplingIntervalKm: 3.0,
+
+  // Weather delay multipliers applied to travel time through high/critical rainfall zones
+  weatherDelayMultipliers: {
+    HIGH: 1.30,      // +30% travel time in heavy rain zones
+    CRITICAL: 1.60,  // +60% travel time in torrential rain zones
+  },
+
   // Risk Level Classification Boundaries
   boundaries: {
     lowMax: 25.0,        // [0, 25) -> LOW
