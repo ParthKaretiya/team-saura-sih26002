@@ -628,6 +628,27 @@ html, body, #root {
   white-space: nowrap;
 }
 
+.driver-eta-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.driver-eta-delay-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
 .driver-eta-bar {
   display: flex;
   align-items: center;
@@ -1177,3 +1198,552 @@ html, body, #root {
   background: linear-gradient(90deg, transparent, #38BDF8, transparent);
   animation: indeterminate-sweep 1.15s ease-in-out infinite;
 }
+
+/* ============================================================
+   Role Selection Modal (First Load)
+   ============================================================ */
+.role-select-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(5, 8, 15, 0.88);
+  backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.role-select-card {
+  max-width: 520px;
+  width: 100%;
+  background: #0F172A;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.role-select-header {
+  text-align: left;
+}
+
+.role-select-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #F8FAFC;
+  margin: 0 0 6px;
+  letter-spacing: -0.3px;
+}
+
+.role-select-subtitle {
+  font-size: 13px;
+  color: #94A3B8;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.role-select-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.role-option-btn {
+  min-height: 84px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.18s ease-in-out;
+  font-family: inherit;
+  width: 100%;
+}
+
+.role-option-driver {
+  border: 1.5px solid rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.role-option-driver:hover {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: #10B981;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.25);
+}
+
+.role-option-operations {
+  border: 1.5px solid rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.role-option-operations:hover {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: #3B82F6;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.25);
+}
+
+.role-option-icon {
+  font-size: 38px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.role-option-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.role-option-headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.role-option-name {
+  font-size: 17px;
+  font-weight: 800;
+  color: #FFFFFF;
+}
+
+.role-option-badge {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.2);
+  color: #34D399;
+}
+
+.role-badge-ops {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93C5FD;
+}
+
+.role-option-desc {
+  font-size: 12px;
+  color: #94A3B8;
+  line-height: 1.4;
+  margin: 4px 0 0;
+}
+
+.role-option-arrow {
+  font-size: 20px;
+  font-weight: 800;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+
+.role-select-footer {
+  text-align: center;
+  font-size: 11px;
+  color: #64748B;
+  padding-top: 4px;
+}
+
+/* ============================================================
+   Driver Trip Start Screen (Touch-Friendly, No Coordinates)
+   ============================================================ */
+.driver-trip-start {
+  padding: 4px 2px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.driver-trip-hero {
+  text-align: left;
+}
+
+.driver-trip-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: #38BDF8;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.driver-trip-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 4px 0 2px;
+}
+
+.driver-trip-lead {
+  font-size: 12px;
+  color: #94A3B8;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.driver-trip-section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-panel);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-lg);
+}
+
+.driver-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.driver-section-number {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #2563EB;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.driver-badge-gps {
+  font-size: 10px;
+  font-weight: 800;
+  color: #34D399;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.driver-badge-hub {
+  font-size: 10px;
+  font-weight: 800;
+  color: #38BDF8;
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.driver-gps-btn {
+  min-height: 58px;
+  width: 100%;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1.5px solid #10B981;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  color: inherit;
+  font-family: inherit;
+}
+
+.driver-gps-btn:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.22);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+}
+
+.driver-gps-active {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: #34D399;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.3);
+}
+
+.driver-gps-icon {
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.driver-gps-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  flex: 1;
+}
+
+.driver-gps-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #FFFFFF;
+}
+
+.driver-gps-subtitle {
+  font-size: 11px;
+  color: #94A3B8;
+  line-height: 1.3;
+}
+
+.driver-gps-check {
+  font-size: 18px;
+  font-weight: 800;
+  color: #34D399;
+  flex-shrink: 0;
+}
+
+.driver-geo-feedback {
+  padding: 9px 12px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  font-size: 11px;
+  color: #FCD34D;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.driver-hubs-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.driver-hubs-label {
+  font-size: 10px;
+  color: #94A3B8;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.driver-hubs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.driver-hub-chip {
+  min-height: 48px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease-in-out;
+  font-family: inherit;
+}
+
+.driver-hub-chip:hover:not(:disabled) {
+  border-color: #38BDF8;
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.driver-hub-chip-active {
+  border-color: #38BDF8;
+  background: rgba(56, 189, 248, 0.22);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.driver-hub-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.driver-hub-state {
+  font-size: 9px;
+  color: #94A3B8;
+}
+
+.driver-routing-loader {
+  padding: 12px 14px;
+  background: rgba(37, 99, 235, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.driver-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid rgba(56, 189, 248, 0.3);
+  border-top-color: #38BDF8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.driver-loader-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: #93C5FD;
+}
+
+.driver-routing-error {
+  padding: 10px 12px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11px;
+  color: #FCA5A5;
+  line-height: 1.4;
+}
+
+.driver-destinations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.driver-destination-card {
+  min-height: 60px;
+  padding: 12px 14px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease-in-out;
+  width: 100%;
+  color: inherit;
+  font-family: inherit;
+}
+
+.driver-destination-card:hover:not(:disabled) {
+  border-color: #38BDF8;
+  background: rgba(30, 41, 59, 0.95);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.driver-dest-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.driver-dest-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.driver-dest-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #FFFFFF;
+}
+
+.driver-dest-meta {
+  font-size: 11px;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.driver-dest-highway {
+  color: #38BDF8;
+  font-weight: 600;
+}
+
+.driver-dest-action {
+  flex-shrink: 0;
+}
+
+.driver-dest-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 6px 14px;
+  background: #059669;
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 800;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.driver-destination-card:hover .driver-dest-go {
+  background: #10B981;
+}
+
+.driver-header-exit-btn {
+  padding: 3px 8px;
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93C5FD;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.driver-header-exit-btn:hover {
+  background: rgba(59, 130, 246, 0.35);
+  color: #FFFFFF;
+}
+
+.driver-switch-ops-btn {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 1px dashed #475569;
+  border-radius: 8px;
+  color: #94A3B8;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.driver-switch-ops-btn:hover {
+  border-color: #94A3B8;
+  color: #FFFFFF;
+  background: rgba(30, 41, 59, 0.5);
+}
+

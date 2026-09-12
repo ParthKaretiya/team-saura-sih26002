@@ -178,6 +178,7 @@ export interface CandidateRouteProfile {
   isBaseline: boolean;
   distanceMeters: number;
   durationSeconds: number;
+  weatherDelaySeconds?: number;
   geometry: RouteResponse['geometry'];
   instructions: RouteNavigationInstruction[];
   risk: RouteRiskSummary;

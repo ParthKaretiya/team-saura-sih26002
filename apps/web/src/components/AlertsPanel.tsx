@@ -6,6 +6,7 @@ interface AlertsPanelProps {
   hasCalculatedRoute?: boolean;
   onRecalculateSaferRoute?: () => void;
   onViewAffectedSegment?: () => void;
+  driverMode?: boolean;
 }
 
 export default function AlertsPanel({
@@ -14,6 +15,7 @@ export default function AlertsPanel({
   hasCalculatedRoute = false,
   onRecalculateSaferRoute,
   onViewAffectedSegment,
+  driverMode = false,
 }: AlertsPanelProps) {
   // Check if any alert affects the current route
   const routeAlerts = alerts.filter((a) => a.routeCandidateId || a.severity === 'CRITICAL');
@@ -73,7 +75,7 @@ export default function AlertsPanel({
                   cursor: 'pointer',
                 }}
               >
-                Recalculate Safer Route
+                {driverMode ? 'Find a safer route' : 'Recalculate Safer Route'}
               </button>
             )}
           </div>
@@ -105,7 +107,7 @@ export default function AlertsPanel({
       <div className="intel-card-header" style={{ marginBottom: 6 }}>
         <span className="intel-card-title">
           <span>🔔</span>
-          <span>Regional Highway Advisories</span>
+          <span>{driverMode ? 'Highway Road Alerts' : 'Regional Highway Advisories'}</span>
         </span>
         <span
           style={{

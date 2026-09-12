@@ -1,39 +1,52 @@
 import type { CandidateRouteProfile } from '../../types/api';
+import type { LiveTripProgress } from '../../utils/eta';
+import { formatDuration } from '../../utils/eta';
 
 interface DriverEtaBarProps {
   selectedRoute: CandidateRouteProfile;
+  liveProgress?: LiveTripProgress | null;
 }
 
-function formatDuration(seconds: number): string {
-  const totalMinutes = Math.round(seconds / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return hours > 0 ? `${hours}h ${minutes}m` : `${totalMinutes} min`;
-}
+export default function DriverEtaBar({ selectedRoute, liveProgress }: DriverEtaBarProps) {
+  const distanceKm = liveProgress
+    ? liveProgress.formattedRemainingDistanceKm
+    : (selectedRoute.distanceMeters / 1000).toFixed(0);
 
-function formatArrival(seconds: number): string {
-  const arrival = new Date(Date.now() + seconds * 1000);
-  return arrival.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+  const durationStr = liveProgress
+    ? liveProgress.formattedRemainingDuration
+    : formatDuration(selectedRoute.durationSeconds);
 
-export default function DriverEtaBar({ selectedRoute }: DriverEtaBarProps) {
-  const distanceKm = (selectedRoute.distanceMeters / 1000).toFixed(0);
+  const etaStr = liveProgress
+    ? liveProgress.formattedArrivalTime
+    : '--:--';
+
+  const weatherDelayMinutes = selectedRoute.weatherDelaySeconds
+    ? Math.round(selectedRoute.weatherDelaySeconds / 60)
+    : 0;
 
   return (
-    <div className="driver-eta-bar">
-      <div className="driver-eta-cell">
-        <span className="driver-eta-value">{distanceKm}</span>
-        <span className="driver-eta-unit">km</span>
-      </div>
-      <div className="driver-eta-divider" />
-      <div className="driver-eta-cell">
-        <span className="driver-eta-value">{formatDuration(selectedRoute.durationSeconds)}</span>
-      </div>
-      <div className="driver-eta-divider" />
-      <div className="driver-eta-cell">
-        <span className="driver-eta-label">ETA</span>
-        <span className="driver-eta-value">{formatArrival(selectedRoute.durationSeconds)}</span>
+    <div className="driver-eta-container">
+      {weatherDelayMinutes > 0 && (
+        <div className="driver-eta-delay-badge">
+          <span>🌧️</span>
+          <span>Includes +{weatherDelayMinutes} min weather delay for heavy rain zones</span>
+        </div>
+      )}
+      <div className="driver-eta-bar">
+        <div className="driver-eta-cell">
+          <span className="driver-eta-value">{distanceKm}</span>
+          <span className="driver-eta-unit">km</span>
+        </div>
+        <div className="driver-eta-divider" />
+        <div className="driver-eta-cell">
+          <span className="driver-eta-value">{durationStr}</span>
+        </div>
+        <div className="driver-eta-divider" />
+        <div className="driver-eta-cell">
+          <span className="driver-eta-label">ETA</span>
+          <span className="driver-eta-value">{etaStr}</span>
+        </div>
       </div>
     </div>
   );
-}
+}

@@ -4,6 +4,7 @@ import type {
   AlertRecord,
   RerouteEvaluationResult,
 } from '../../types/api';
+import type { LiveTripProgress } from '../../utils/eta';
 import DriverHeader from './DriverHeader';
 import DriverManeuverCard from './DriverManeuverCard';
 import DriverNavigationCard from './DriverNavigationCard';
@@ -13,6 +14,7 @@ import DriverRouteSummary from './DriverRouteSummary';
 import DriverSafetyStatus from './DriverSafetyStatus';
 import DriverBottomNav from './DriverBottomNav';
 import type { DriverTab } from './DriverBottomNav';
+import DriverTripStart from './DriverTripStart';
 import AlertsPanel from '../AlertsPanel';
 import ReroutePanel from '../ReroutePanel';
 
@@ -26,6 +28,12 @@ interface DriverModeProps {
   rerouteError: string | null;
   onCheckReroute: () => void;
   onExit: () => void;
+  onCalculate: (origin: string, dest: string, destLabel?: string) => Promise<void> | void;
+  isRouting: boolean;
+  routingError: string | null;
+  destinationLabel?: string;
+  onNewTrip?: () => void;
+  liveProgress?: LiveTripProgress | null;
 }
 
 export default function DriverMode({
@@ -38,6 +46,12 @@ export default function DriverMode({
   rerouteError,
   onCheckReroute,
   onExit,
+  onCalculate,
+  isRouting,
+  routingError,
+  destinationLabel,
+  onNewTrip,
+  liveProgress,
 }: DriverModeProps) {
   const [activeTab, setActiveTab] = useState<DriverTab>('navigate');
 
@@ -45,7 +59,7 @@ export default function DriverMode({
 
   return (
     <div className="driver-shell">
-      <DriverHeader isLive={isLive} />
+      <DriverHeader isLive={isLive} onExit={onExit} />
 
       {showMapOverlay && optimization ? (
         <>
@@ -53,6 +67,7 @@ export default function DriverMode({
             <DriverManeuverCard
               selectedRoute={optimization.selectedRoute}
               destination={optimization.destination}
+              destinationLabel={destinationLabel}
             />
           </div>
 
@@ -64,29 +79,41 @@ export default function DriverMode({
               onCheckReroute={onCheckReroute}
               canReroute={!isCheckingReroute}
             />
-            <DriverEtaBar selectedRoute={optimization.selectedRoute} />
+            <DriverEtaBar selectedRoute={optimization.selectedRoute} liveProgress={liveProgress} />
           </div>
         </>
       ) : (
         <div className="driver-sheet">
           {!optimization ? (
-            <div className="driver-card driver-empty">
-              <div className="driver-empty-title">No active route</div>
-              <div className="driver-empty-text">
-                Calculate a route in the Command Center to start driver navigation.
-              </div>
-              <button className="driver-empty-btn" onClick={onExit}>
-                Go to Route Planner
-              </button>
-            </div>
+            <DriverTripStart
+              onCalculate={onCalculate}
+              isRouting={isRouting}
+              routingError={routingError}
+              onExit={onExit}
+            />
           ) : activeTab === 'route' ? (
             <div className="driver-stack">
               <DriverRouteSummary
                 selectedRoute={optimization.selectedRoute}
                 preference={optimization.preference}
                 strategy={optimization.optimization.strategy}
+                liveProgress={liveProgress}
               />
               <DriverNavigationCard selectedRoute={optimization.selectedRoute} />
+              {onNewTrip && (
+                <button
+                  type="button"
+                  className="driver-empty-btn"
+                  onClick={onNewTrip}
+                  style={{
+                    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                    border: '1px solid #334155',
+                    minHeight: 44,
+                  }}
+                >
+                  Change Destination / New Trip
+                </button>
+              )}
             </div>
           ) : activeTab === 'safety' ? (
             <div className="driver-stack">
@@ -100,6 +127,7 @@ export default function DriverMode({
                 rerouteResult={rerouteResult}
                 rerouteError={rerouteError}
                 hasCalculatedRoute
+                driverMode={true}
               />
             </div>
           ) : activeTab === 'alerts' ? (
@@ -108,6 +136,7 @@ export default function DriverMode({
               isUnavailable={alertsUnavailable}
               hasCalculatedRoute
               onRecalculateSaferRoute={onCheckReroute}
+              driverMode={true}
             />
           ) : (
             <div className="driver-stack">
@@ -115,12 +144,32 @@ export default function DriverMode({
                 <div className="driver-nav-header">
                   <span className="driver-nav-title">DRIVER SESSION</span>
                 </div>
-                <div className="driver-route-foot" style={{ marginBottom: 12 }}>
-                  <span>Switch back to the Command Center to adjust routes or settings.</span>
+                <p className="driver-route-foot" style={{ marginBottom: 16 }}>
+                  Active trip monitoring is running. You can start a new trip, adjust routing, or switch to the Command Center.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {onNewTrip && (
+                    <button
+                      type="button"
+                      className="driver-empty-btn"
+                      onClick={() => {
+                        onNewTrip();
+                        setActiveTab('navigate');
+                      }}
+                      style={{ minHeight: 46, background: '#2563EB' }}
+                    >
+                      🎯 Change Destination / New Trip
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="driver-empty-btn"
+                    onClick={onExit}
+                    style={{ minHeight: 46, background: 'rgba(30, 41, 59, 0.9)', border: '1px solid #475569' }}
+                  >
+                    🖥️ Switch to Operations Command Center
+                  </button>
                 </div>
-                <button className="driver-empty-btn" onClick={onExit}>
-                  Exit Driver Mode
-                </button>
               </div>
             </div>
           )}

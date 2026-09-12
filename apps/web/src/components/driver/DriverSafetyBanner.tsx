@@ -23,7 +23,7 @@ export default function DriverSafetyBanner({
   let tone: 'hazard' | 'warn' | 'safe' = 'safe';
   let icon = '✓';
   let title = 'SAFE TO PROCEED';
-  let message = 'No active route warnings';
+  let message = 'No active road warnings ahead';
 
   if (activeAlert) {
     tone = activeAlert.severity === 'CRITICAL' ? 'hazard' : 'warn';
@@ -33,18 +33,18 @@ export default function DriverSafetyBanner({
   } else if (accessibilityStatus === 'CLOSED') {
     tone = 'hazard';
     icon = '⛔';
-    title = 'ROAD CLOSED';
-    message = 'A monitored corridor on this route is closed.';
+    title = 'ROAD CLOSED AHEAD';
+    message = 'A road segment on this route is currently closed to traffic.';
   } else if (accessibilityStatus === 'RESTRICTED') {
     tone = 'warn';
     icon = '⚠';
-    title = 'RESTRICTED CORRIDOR';
-    message = 'Travel possible with caution on this route.';
+    title = 'RESTRICTED ROAD';
+    message = 'Drive with caution — single-lane or slow traffic on this corridor.';
   } else if (risk.overallLevel === 'CRITICAL' || risk.overallLevel === 'HIGH') {
     tone = 'warn';
     icon = '⚠';
-    title = `${risk.overallLevel} RISK`;
-    message = `Dominant trigger: ${risk.dominantTrigger}`;
+    title = risk.overallLevel === 'CRITICAL' ? 'HIGH RISK ROAD AHEAD' : 'ROAD AHEAD LOOKS RISKY';
+    message = `Main concern: ${risk.dominantTrigger}`;
   }
 
   const className = `driver-safety-banner driver-safety-${tone}`;
@@ -62,15 +62,16 @@ export default function DriverSafetyBanner({
       </div>
 
       <div className="driver-safety-actions">
-        <button className="driver-safety-btn" onClick={onViewSafety}>
-          View
+        <button type="button" className="driver-safety-btn" onClick={onViewSafety}>
+          Safety Details
         </button>
         <button
+          type="button"
           className="driver-safety-btn driver-safety-btn-primary"
           onClick={onCheckReroute}
           disabled={!canReroute}
         >
-          Safer Route
+          Find a safer route
         </button>
       </div>
     </div>
