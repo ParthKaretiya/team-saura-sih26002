@@ -4,6 +4,36 @@ This guide describes the local development setup, environment configurations, an
 
 ---
 
+## Quick Start (Fresh Clone)
+
+A fresh clone requires two commands to set up and start the entire SauraRoute stack. Run both from the **repository root** in PowerShell:
+
+```powershell
+# 1. One-time setup — checks prerequisites, downloads GraphHopper JAR + OSM data,
+#    installs npm and Python dependencies. Safe to run repeatedly.
+.\scripts\setup.ps1
+
+# 2. Start all services — launches GraphHopper (:8989) and the API (:3000),
+#    waits for readiness, and streams output. Press Ctrl+C to stop.
+.\scripts\start.ps1
+```
+
+After starting, verify everything is healthy:
+
+```powershell
+.\scripts\check-health.ps1
+```
+
+> **Note:** The setup script downloads ~100 MB of data files (GraphHopper JAR + NER OSM PBF) on first run. Subsequent runs skip existing valid files.
+
+| Script | Purpose |
+| :--- | :--- |
+| `scripts/setup.ps1` | Prerequisite check, data download, dependency install (idempotent) |
+| `scripts/start.ps1` | Launch GraphHopper + API, report URLs, stream output |
+| `scripts/check-health.ps1` | Verify prerequisites, data files, ML assets, running services |
+
+---
+
 ## 1. Prerequisites & Version Requirements
 
 | Dependency | Minimum Version | Tested Version | Purpose |
